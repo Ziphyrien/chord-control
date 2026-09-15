@@ -1,0 +1,40 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "src/main.ts",
+        "vite.config.ts",
+        "playwright.config.ts",
+        "controller/src/index.ts",
+        "scripts/*.mjs",
+        "tests/*.mjs",
+        "tests/browser.ts",
+        "tests/ui.spec.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,svelte}",
+        "controller/**/*.ts",
+        "shared/**/*.ts",
+        "sdk/**/*.ts",
+        "scripts/**/*.mjs",
+        "tests/**/*.{mjs,ts}",
+        "vite.config.ts",
+        "playwright.config.ts"
+      ],
+      "ignore": ["**/*.d.ts"]
+    },
+    "plugins/*": {
+      "entry": ["src/worker.ts", "ui/main.ts"],
+      "project": ["src/**/*.ts", "ui/**/*.ts", "contract.ts"]
+    }
+  },
+  "ignoreDependencies": [
+    "@tauri-apps/cli",
+    "@tauri-apps/plugin-autostart",
+    "oxfmt",
+    "oxlint",
+    "svelte-check",
+    "typescript"
+  ]
+}

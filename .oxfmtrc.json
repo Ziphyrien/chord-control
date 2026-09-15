@@ -1,0 +1,8 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "tabWidth": 2,
+  "endOfLine": "lf",
+  "svelte": true,
+  "ignorePatterns": ["bun.lock", "src-tauri/Cargo.lock"]
+}

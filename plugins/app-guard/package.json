@@ -1,0 +1,23 @@
+{
+  "name": "com.chord.app-guard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "打开控制中心和正常退出前验证密保盘",
+  "type": "module",
+  "control": {
+    "name": "程序入口保护",
+    "services": {
+      "provides": [],
+      "requires": [
+        "study.password.v1"
+      ]
+    },
+    "hooks": [
+      "desktop.open",
+      "desktop.quit",
+      "set_enabled",
+      "remove_plugin",
+      "set_settings"
+    ]
+  }
+}

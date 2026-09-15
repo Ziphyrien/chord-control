@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>系统信息与便笺</title>
+    <style>
+      body {
+        font:
+          15px/1.6 "Segoe UI",
+          sans-serif;
+        color: #e8edf5;
+        background: #11161e;
+        margin: 32px;
+      }
+      h1 {
+        font-size: 25px;
+        margin: 0;
+      }
+      p {
+        color: #8893a5;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 10px;
+        background: #0b0e13;
+        border: 1px solid #354153;
+        padding: 18px;
+        border-radius: 8px;
+      }
+      dt {
+        color: #9aa7b9;
+      }
+      dd {
+        margin: 0;
+      }
+      textarea {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 130px;
+        background: #0b0e13;
+        color: #e8edf5;
+        padding: 12px;
+        border: 1px solid #354153;
+        border-radius: 8px;
+        font: inherit;
+      }
+      button {
+        margin: 14px 10px 0 0;
+        padding: 10px 18px;
+        background: #9fe870;
+        border: 0;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      output {
+        display: block;
+        margin-top: 12px;
+        color: #79d8d2;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>系统信息与便笺</h1>
+    <dl id="info"><dt>正在读取…</dt></dl>
+    <label for="note">本机便笺</label><textarea id="note" maxlength="10000"></textarea
+    ><button id="save">保存便笺</button><button id="refresh">刷新主机信息</button
+    ><output id="status" aria-live="polite"></output>
+    <!--PLUGIN_SCRIPT-->
+  </body>
+</html>

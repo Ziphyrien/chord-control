@@ -1,0 +1,61 @@
+{
+  "name": "chord-control",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows control center for Chord plugins",
+  "workspaces": [
+    "plugins/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 1420",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json --tsgo",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "controller:dev": "bun run build:controller && node build/controller.cjs",
+    "build:controller": "node scripts/build-controller.mjs",
+    "build:sidecar": "node scripts/build-sidecar.mjs",
+    "build:windows": "tauri build --ci",
+    "plugins:build": "node scripts/build-plugins.mjs",
+    "keys:generate": "node scripts/generate-key.mjs",
+    "test": "bun run build:controller:test && node --test tests/controller.test.mjs tests/download.test.mjs tests/plugin-security.test.mjs tests/distribution.test.mjs",
+    "test:sea": "node --test tests/sea.test.mjs",
+    "test:ui": "bun run build:controller:test && playwright test",
+    "test:periodic": "bun run build:controller:test && node --test tests/periodic.test.mjs",
+    "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit",
+    "test:architecture": "node --test tests/architecture.test.mjs",
+    "lint": "oxlint --ignore-path .gitignore --deny-warnings .",
+    "lint:fix": "oxlint --ignore-path .gitignore --deny-warnings --fix .",
+    "format": "oxfmt --write . && cargo fmt --manifest-path src-tauri/Cargo.toml --all",
+    "format:check": "oxfmt --check . && cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check",
+    "knip": "knip --reporter compact",
+    "build:controller:test": "node scripts/build-controller.mjs --test"
+  },
+  "dependencies": {
+    "@earendil-works/chord": "0.85.1",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-autostart": "^2.5.1",
+    "fflate": "^0.8.3",
+    "svelte": "^5.57.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/node": "^26.5.1",
+    "@typescript/native": "npm:typescript@7",
+    "esbuild": "^0.28.2",
+    "knip": "6.35.1",
+    "oxfmt": "^0.68.0",
+    "oxlint": "^1.83.0",
+    "svelte-check": "^4.7.6",
+    "typescript": "~6",
+    "vite": "^8.3.0"
+  },
+  "engines": {
+    "bun": ">=1.4.0",
+    "node": ">=26.0.0"
+  },
+  "packageManager": "bun@1.4.2"
+}

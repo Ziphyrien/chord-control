@@ -1,0 +1,18 @@
+{
+  "name": "com.example.system-info",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/chord": "0.85.1"
+  },
+  "control": {
+    "name": "系统信息与便笺",
+    "permissions": [
+      "system-info",
+      "filesystem"
+    ],
+    "ui": "ui/index.html",
+    "uiScript": "ui/main.ts"
+  }
+}
