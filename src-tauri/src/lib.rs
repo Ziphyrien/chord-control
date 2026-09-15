@@ -2,7 +2,7 @@ mod controller;
 mod desktop;
 mod tray;
 
-use tauri::WindowEvent;
+use tauri::{Manager, WindowEvent};
 
 pub fn run() {
     tauri::Builder::default()
@@ -42,10 +42,10 @@ pub fn run() {
             if window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
-                    desktop::request_action(window.managed_app_handle(), "quit");
+                    desktop::request_action(window.app_handle(), "quit");
                 }
             } else if let WindowEvent::Destroyed = event {
-                desktop::window_closed(window.managed_app_handle(), window.label());
+                desktop::window_closed(window.app_handle(), window.label());
             }
         })
         .build(tauri::generate_context!())
