@@ -108,6 +108,27 @@ pub(crate) fn handle_event(app: &AppHandle, value: &serde_json::Value) {
         }
     }
 }
+fn plugin_window_label(id: &str) -> String {
+    let encoded = id
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("plugin-{encoded}")
+}
+
+fn plugin_id_from_label(label: &str) -> Option<String> {
+    let encoded = label.strip_prefix("plugin-")?;
+    if encoded.is_empty() || encoded.len() % 2 != 0 {
+        return None;
+    }
+    let bytes = (0..encoded.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&encoded[index..index + 2], 16))
+        .collect::<Result<Vec<_>, _>>()?;
+    String::from_utf8(bytes).ok()
+}
+
 fn present_plugin(app: &AppHandle, value: &serde_json::Value) -> Result<(), String> {
     let id = value["pluginId"].as_str().ok_or("Plugin ID missing")?;
     if id.len() > 100
@@ -117,7 +138,7 @@ fn present_plugin(app: &AppHandle, value: &serde_json::Value) -> Result<(), Stri
     {
         return Err("Invalid plugin ID".into());
     }
-    let label = format!("plugin-{id}");
+    let label = plugin_window_label(id);
     if value["visible"] != true {
         if let Some(window) = app.get_webview_window(&label) {
             let _ = window.close();
@@ -153,7 +174,7 @@ fn present_plugin(app: &AppHandle, value: &serde_json::Value) -> Result<(), Stri
     Ok(())
 }
 pub(crate) fn window_closed(app: &AppHandle, label: &str) {
-    if let Some(id) = label.strip_prefix("plugin-") {
+    if let Some(id) = plugin_id_from_label(label) {
         let _ = crate::controller::send_internal(
             app,
             serde_json::json!({"id":format!("closed-{id}"),"type":"plugin_window_closed","pluginId":id}),
@@ -173,6 +194,28 @@ pub(crate) fn open_data_directory(state: State<'_, DesktopState>) -> Result<(), 
         .map_err(|e| e.to_string())?;
     Ok(())
 }
+#[cfg(test)]
+mod tests {
+    use super::{plugin_id_from_label, plugin_window_label};
+
+    #[test]
+    fn plugin_window_labels_round_trip_ids_with_punctuation() {
+        let id = "com.chord.password-pad";
+        let label = plugin_window_label(id);
+        assert!(label.starts_with("plugin-"));
+        assert!(label
+            .chars()
+            .all(|character| { character.is_ascii_alphanumeric() || "-_:".contains(character) }));
+        assert_eq!(plugin_id_from_label(&label).as_deref(), Some(id));
+    }
+
+    #[test]
+    fn invalid_plugin_window_labels_are_ignored() {
+        assert_eq!(plugin_id_from_label("plugin-xyz"), None);
+        assert_eq!(plugin_id_from_label("main"), None);
+    }
+}
+
 pub(crate) fn ensure_autostart(app: &AppHandle) -> Result<(), String> {
     if cfg!(debug_assertions) {
         return Ok(());
