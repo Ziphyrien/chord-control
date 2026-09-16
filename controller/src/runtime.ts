@@ -19,6 +19,7 @@ import { unpack } from "./artifacts.ts";
 import { safePath } from "../../shared/plugin-format.ts";
 import type { PluginLifecycle, PluginPage, PluginUi as PluginUiPort } from "./ports.ts";
 import { ServiceRouter } from "./service-router.ts";
+import type { NativeBridge } from "./native-bridge.ts";
 
 type Running = { host: FacetHost; loaded: LoadedFacets; root: string; manifest: PluginManifest };
 export class PluginRuntime implements PluginLifecycle, PluginUiPort {
@@ -29,6 +30,7 @@ export class PluginRuntime implements PluginLifecycle, PluginUiPort {
     private readonly data: string,
     private readonly log: (id: string, message: string) => void,
     private readonly present: (id: string, visible: boolean) => Promise<void> = async () => {},
+    private readonly native?: NativeBridge,
   ) {}
   has(id: string): boolean {
     return this.running.has(id);
@@ -53,6 +55,16 @@ export class PluginRuntime implements PluginLifecycle, PluginUiPort {
         id: "chord-control.host",
         setup: (env) =>
           env.provide(ControlHost, {
+            native: async (operation, input, context) => {
+              if (!this.native) throw new Error("Windows 原生宿主未连接");
+              return this.native.call(
+                manifest.id,
+                manifest.permissions ?? [],
+                operation,
+                input,
+                context.abortSignal,
+              );
+            },
             async paths() {
               return { dataDir, bundleDir: root };
             },

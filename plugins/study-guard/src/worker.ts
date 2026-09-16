@@ -44,7 +44,7 @@ export default defineFacet({
     });
     env.onActivate(async () => {
       const paths = await host.paths(BACKGROUND_CONTEXT);
-      platform = createPlatform(paths.dataDir, paths.bundleDir, log);
+      platform = createPlatform(host, paths.dataDir, paths.bundleDir, log);
       active = true;
       await platform.start(request);
     });

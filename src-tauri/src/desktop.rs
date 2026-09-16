@@ -1,227 +1,183 @@
-use std::fs;
-use std::path::PathBuf;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Mutex,
+use std::{
+    fs,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
-
+use tauri_plugin_opener::OpenerExt;
+const ACTION_TIMEOUT: Duration = Duration::from_secs(180);
+struct Request {
+    id: String,
+    action: String,
+    started: Instant,
+}
+#[derive(Default)]
+struct Pending(Option<Request>);
+impl Pending {
+    fn begin(&mut self, id: String, action: String, now: Instant) -> bool {
+        if self
+            .0
+            .as_ref()
+            .is_some_and(|r| now.duration_since(r.started) < ACTION_TIMEOUT)
+        {
+            return false;
+        }
+        self.0 = Some(Request {
+            id,
+            action,
+            started: now,
+        });
+        true
+    }
+    fn take(&mut self, id: &str, now: Instant) -> Option<String> {
+        if !self.0.as_ref().is_some_and(|r| r.id == id) {
+            return None;
+        }
+        self.0
+            .take()
+            .filter(|r| now.duration_since(r.started) < ACTION_TIMEOUT)
+            .map(|r| r.action)
+    }
+    fn cancel(&mut self, id: &str) -> bool {
+        if self.0.as_ref().is_some_and(|r| r.id == id) {
+            self.0 = None;
+            true
+        } else {
+            false
+        }
+    }
+}
 #[derive(Default)]
 pub(crate) struct DesktopState {
     pub unlocked: AtomicBool,
-    pending: Mutex<Option<(String, String)>>,
+    pending: Mutex<Pending>,
 }
-pub(crate) fn data_dir() -> Result<PathBuf, String> {
-    let root = std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA is unavailable")?;
-    Ok(PathBuf::from(root).join("ChordControl"))
+pub(crate) fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    // Preserve the existing data location while resolving it through the Windows known folder API.
+    app.path()
+        .local_data_dir()
+        .map(|base| base.join("ChordControl"))
+        .map_err(|e| e.to_string())
+}
+pub(crate) fn report(app: &AppHandle, error: &str) {
+    eprintln!("Desktop: {error}");
+    if let Some(tray) = app.tray_by_id("controller") {
+        let _ = tray.set_tooltip(Some(format!("Chord Control — {error}")));
+    }
+    crate::controller::emit(app, serde_json::json!({"type":"error","message":error}));
 }
 fn show_main(app: &AppHandle) {
-    app.state::<DesktopState>()
-        .unlocked
-        .store(true, Ordering::SeqCst);
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+        match window
+            .unminimize()
+            .and_then(|()| window.show())
+            .and_then(|()| window.set_focus())
+        {
+            Ok(()) => {
+                app.state::<DesktopState>()
+                    .unlocked
+                    .store(true, Ordering::SeqCst);
+            }
+            Err(error) => report(app, &error.to_string()),
+        }
     }
 }
-pub(crate) fn lock(app: &AppHandle) {
+pub(crate) fn disconnected(app: &AppHandle) {
     app.state::<DesktopState>()
         .unlocked
         .store(false, Ordering::SeqCst);
-}
-pub(crate) fn disconnected(app: &AppHandle) {
-    lock(app);
-    if let Ok(mut pending) = app.state::<DesktopState>().pending.lock() {
-        pending.take();
-    }
+    crate::sync::lock(&app.state::<DesktopState>().pending).0 = None;
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
     }
+    crate::plugin_windows::hide_all(app);
 }
 pub(crate) fn request_action(app: &AppHandle, action: &str) {
-    let request_id = format!(
+    if !["open", "quit"].contains(&action) {
+        report(app, "未知桌面操作");
+        return;
+    }
+    let id = format!(
         "desktop-{}",
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos()
     );
-    let state = app.state::<DesktopState>();
-    if let Ok(mut pending) = state.pending.lock() {
-        if pending.is_some() {
-            return;
+    if !crate::sync::lock(&app.state::<DesktopState>().pending).begin(
+        id.clone(),
+        action.to_owned(),
+        Instant::now(),
+    ) {
+        if let Some(tray) = app.tray_by_id("controller") {
+            let _ = tray.set_tooltip(Some("Chord Control — 请完成当前验证"));
         }
-        *pending = Some((request_id.clone(), action.to_owned()));
-    } else {
         return;
     }
     if let Err(error) = crate::controller::start_controller(app).and_then(|()| {
         crate::controller::send_internal(
             app,
-            serde_json::json!({"id":request_id,"type":"desktop_action","action":action}),
+            serde_json::json!({"id":id,"type":"desktop_action","action":action}),
         )
     }) {
-        if let Ok(mut pending) = state.pending.lock() {
-            pending.take();
-        }
-        crate::controller::emit(app, serde_json::json!({"type":"error","message":error}));
+        crate::sync::lock(&app.state::<DesktopState>().pending).cancel(&id);
+        report(app, &error);
+        return;
     }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(ACTION_TIMEOUT).await;
+        if crate::sync::lock(&app.state::<DesktopState>().pending).cancel(&id) {
+            report(&app, "桌面操作等待超时，请重新操作");
+        }
+    });
 }
 pub(crate) fn handle_event(app: &AppHandle, value: &serde_json::Value) {
     if value["type"] == "plugin_window" {
-        if let Err(error) = present_plugin(app, value) {
-            crate::controller::emit(app, serde_json::json!({"type":"error","message":error}));
-        }
+        crate::plugin_windows::handle(app, value);
         return;
     }
     if value["type"] != "response" {
         return;
     }
-    let state = app.state::<DesktopState>();
-    let action = if let Ok(mut pending) = state.pending.lock() {
-        if pending
-            .as_ref()
-            .is_some_and(|(id, _)| value["id"].as_str() == Some(id.as_str()))
-        {
-            pending.take().map(|(_, action)| action)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let action = crate::sync::lock(&app.state::<DesktopState>().pending)
+        .take(value["id"].as_str().unwrap_or(""), Instant::now());
     if let Some(action) = action {
         if value["ok"] == true {
             if action == "open" {
                 show_main(app);
-            } else if action == "quit" {
+            } else {
                 crate::controller::quit(app);
             }
-        } else if let Some(tray) = app.tray_by_id("controller") {
-            let _ = tray.set_tooltip(Some(format!(
-                "Chord Control — {}",
-                value["message"].as_str().unwrap_or("操作未获允许")
-            )));
+        } else {
+            report(app, value["message"].as_str().unwrap_or("操作未获允许"));
         }
-    }
-}
-fn plugin_window_label(id: &str) -> String {
-    let encoded = id
-        .as_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    format!("plugin-{encoded}")
-}
-
-fn plugin_id_from_label(label: &str) -> Option<String> {
-    let encoded = label.strip_prefix("plugin-")?;
-    if encoded.is_empty() || encoded.len() % 2 != 0 {
-        return None;
-    }
-    let bytes = (0..encoded.len())
-        .step_by(2)
-        .map(|index| u8::from_str_radix(&encoded[index..index + 2], 16))
-        .collect::<Result<Vec<_>, _>>()
-        .ok()?;
-    String::from_utf8(bytes).ok()
-}
-
-fn present_plugin(app: &AppHandle, value: &serde_json::Value) -> Result<(), String> {
-    let id = value["pluginId"].as_str().ok_or("Plugin ID missing")?;
-    if id.len() > 100
-        || !id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || ".-_".contains(c))
-    {
-        return Err("Invalid plugin ID".into());
-    }
-    let label = plugin_window_label(id);
-    if value["visible"] != true {
-        if let Some(window) = app.get_webview_window(&label) {
-            let _ = window.close();
-        }
-        return Ok(());
-    }
-    if let Some(window) = app.get_webview_window(&label) {
-        let _ = window.show();
-        let _ = window.set_focus();
-        return Ok(());
-    }
-    let url = value["url"]
-        .as_str()
-        .ok_or("Plugin URL missing")?
-        .parse::<tauri::Url>()
-        .map_err(|e| e.to_string())?;
-    if url.scheme() != "http"
-        || url.host_str() != Some("127.0.0.1")
-        || url.port().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-    {
-        return Err("Plugin URL must be loopback".into());
-    }
-    WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
-        .title(value["title"].as_str().unwrap_or("插件"))
-        .inner_size(440.0, 560.0)
-        .resizable(false)
-        .center()
-        .focused(true)
-        .build()
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-pub(crate) fn window_closed(app: &AppHandle, label: &str) {
-    if let Some(id) = plugin_id_from_label(label) {
-        let _ = crate::controller::send_internal(
-            app,
-            serde_json::json!({"id":format!("closed-{id}"),"type":"plugin_window_closed","pluginId":id}),
-        );
     }
 }
 #[tauri::command]
-pub(crate) fn open_data_directory(state: State<'_, DesktopState>) -> Result<(), String> {
+pub(crate) fn open_data_directory(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<(), String> {
     if !state.unlocked.load(Ordering::SeqCst) {
         return Err("控制中心尚未解锁".into());
     }
-    let dir = data_dir()?;
+    let dir = data_dir(&app)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    std::process::Command::new("explorer.exe")
-        .arg(dir)
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    app.opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
 }
-#[cfg(test)]
-mod tests {
-    use super::{plugin_id_from_label, plugin_window_label};
-
-    #[test]
-    fn plugin_window_labels_round_trip_ids_with_punctuation() {
-        let id = "com.chord.password-pad";
-        let label = plugin_window_label(id);
-        assert!(label.starts_with("plugin-"));
-        assert!(label
-            .chars()
-            .all(|character| { character.is_ascii_alphanumeric() || "-_:".contains(character) }));
-        assert_eq!(plugin_id_from_label(&label).as_deref(), Some(id));
-    }
-
-    #[test]
-    fn invalid_plugin_window_labels_are_ignored() {
-        assert_eq!(plugin_id_from_label("plugin-xyz"), None);
-        assert_eq!(plugin_id_from_label("main"), None);
-    }
-}
-
 pub(crate) fn ensure_autostart(app: &AppHandle) -> Result<(), String> {
     if cfg!(debug_assertions) {
         return Ok(());
     }
-    let dir = data_dir()?;
+    let dir = data_dir(app)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let marker = dir.join("first-run-complete");
     if !marker.exists() {
@@ -229,4 +185,22 @@ pub(crate) fn ensure_autostart(app: &AppHandle) -> Result<(), String> {
         fs::write(marker, b"1").map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn pending_expires_and_late_reply_cannot_complete_new_action() {
+        let mut pending = Pending::default();
+        let now = Instant::now();
+        assert!(pending.begin("a".into(), "open".into(), now));
+        assert!(!pending.begin("b".into(), "quit".into(), now + Duration::from_secs(5)));
+        assert!(pending.begin("b".into(), "quit".into(), now + ACTION_TIMEOUT));
+        assert_eq!(pending.take("a", now + ACTION_TIMEOUT), None);
+        assert!(!pending.cancel("a"));
+        assert_eq!(
+            pending.take("b", now + ACTION_TIMEOUT).as_deref(),
+            Some("quit")
+        );
+    }
 }

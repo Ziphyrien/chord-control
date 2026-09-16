@@ -7,7 +7,7 @@ import { build } from "esbuild";
 import { zipSync } from "fflate";
 import { signingBytes } from "../shared/signing.ts";
 import { assertId, assertManifest, safePath } from "../shared/plugin-format.ts";
-import { HOST_VERSION, CHORD_VERSION } from "../shared/versions.ts";
+import { CHORD_VERSION } from "../shared/versions.ts";
 import { currentRepositorySlug, distributionFor } from "./repository-config.mjs";
 
 function signed(value, privateKey) {
@@ -105,7 +105,7 @@ export async function buildPlugin({ directory, outdir, baseUrl, privateKey }) {
       version: pkg.version,
       artifactUrl: `${baseUrl.replace(/\/$/, "")}/${artifactName}`,
       artifactSha256: hash,
-      minHostVersion: HOST_VERSION,
+      minHostVersion: control.minHostVersion ?? "0.1.0",
       chordVersion: CHORD_VERSION,
       entry: "worker",
       ...(control.ui ? { ui: "ui.html" } : {}),

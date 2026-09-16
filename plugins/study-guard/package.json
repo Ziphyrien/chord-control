@@ -1,11 +1,12 @@
 {
   "name": "com.chord.study-guard",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "浏览器启动验证与学习壁纸策略",
   "type": "module",
   "control": {
     "name": "学习权限",
+    "minHostVersion": "0.2.0",
     "permissions": [
       "process-control",
       "registry-current-user",
@@ -20,9 +21,7 @@
     "ui": "ui/index.html",
     "uiScript": "ui/main.ts",
     "assets": [
-      "assets/study-wallpaper.png",
-      "assets/wallpaper-policy.ps1",
-      "assets/browser-monitor.ps1"
+      "assets/study-wallpaper.jpg"
     ]
   }
 }

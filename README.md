@@ -30,7 +30,7 @@ Tauri 的构建 hook 自动生成前端与独立 sidecar：
 
 ## 插件自动发布
 
-仓库中的 [plugins 工作流]（会执行 Knip）(.github/workflows/plugins.yml) 在 `main` 上相关文件变更后自动发现 `plugins/*`、编译、签名并发布。先发布带版本的插件文件，再更新固定地址的签名目录。控制器通过目录发现新插件和移除项，通过内容哈希决定是否下载更新。
+仓库中的 [plugins 工作流](.github/workflows/plugins.yml) 在 `main` 上相关文件变更后自动发现 `plugins/*`、编译、签名并发布。先发布带版本的插件文件，再更新固定地址的签名目录。控制器通过目录发现新插件和移除项，通过内容哈希决定是否下载更新。
 
 1. 运行 `bun run keys:generate`，生成 `.local/signing/private.pem` 和 `public.pem`。
 2. 把私钥完整内容写入仓库 Actions Secret `PLUGIN_SIGNING_PRIVATE_KEY`。私钥目录已从 Git 排除。
@@ -39,7 +39,9 @@ Tauri 的构建 hook 自动生成前端与独立 sidecar：
 
 公钥由发布者单独提供，控制器将其固定到插件源。签名覆盖插件身份、版本、下载地址和哈希。当前下载器支持公开 HTTPS 发布源；私有 GitHub 仓库的认证尚未接入。
 
-Windows 工作流运行 Oxlint、格式检查、类型检查、集成测试、真实定时测试、浏览器交互、安装包构建和 SEA 测试，产物保存在 Actions Artifacts 中。
+Windows 工作流运行 Oxlint、Knip、格式检查、类型检查和安装包构建，不运行测试或安装 Playwright。编译交给 GitHub Actions，本机可做源码审查、lint 和格式化。普通构建保存在 Actions Artifacts；`app-v*` 标签构建额外生成 Tauri 更新签名和 `latest.json`，完整上传后公开 Release。
+
+主程序从 0.2.0 起支持托盘签名更新。安装器不创建卸载程序、卸载项或快捷方式；维护停止、移除命令和热更新边界见 [维护说明](docs/maintenance.md)。
 
 ## 编写插件
 
@@ -55,7 +57,7 @@ plugins/my-plugin/
 
 `package.json` 的 `name` 是稳定插件 ID，`version` 使用 `x.y.z`。`control.name` 是显示名称，`control.ui` 和 `control.uiScript` 指定可选界面。UI 模板通过 `<!--PLUGIN_SCRIPT-->` 插入编译后的浏览器脚本。`control.assets` 可以声明需要打包的文件。
 
-后台默认导出 Chord facet。通过 [sdk/index.ts](sdk/index.ts) 的 `ControlHost` 获取数据目录、记录日志和打开插件窗口，通过 `PluginUi` 提供界面调用的方法。插件可以在 `control.services` 中声明 Chord 服务的 `provides` / `requires`，在自己的包里定义服务契约；控制器使用 Chord 的 `RemoteServiceSource` 动态连接它们。`control.hooks` 声明通用宿主操作钩子，策略由插件自己实现。激活时申请资源，使用 `env.own()` 注册清理。界面使用 [sdk/ui.ts](sdk/ui.ts) 的 `callHost()` 调用后台。
+后台默认导出 Chord facet。通过 [sdk/index.ts](sdk/index.ts) 的 `ControlHost` 获取数据目录、记录日志、打开插件窗口和调用 `native(operation, input, context)`，通过 `PluginUi` 提供界面调用的方法。插件可以在 `control.services` 中声明 Chord 服务的 `provides` / `requires`，在自己的包里定义服务契约；控制器使用 Chord 的 `RemoteServiceSource` 动态连接它们。`control.hooks` 声明通用宿主操作钩子，策略由插件自己实现。激活时申请资源，使用 `env.own()` 注册清理。界面使用 [sdk/ui.ts](sdk/ui.ts) 的 `callHost()` 调用后台。
 
 仓库内置的 `com.chord.password-pad` 用当天“月份 + 日期 + 星期英文首字母”生成一次性滑动密码，`com.chord.app-guard` 通过 Chord 服务保护打开控制中心、退出和设置操作，`com.chord.study-guard` 管理浏览器限制与学习壁纸。壁纸使用 Windows 当前用户策略注册表固定，数据和原值由插件保存并在停用时有条件恢复。插件资源和依赖由 CI 编译进签名包，客户机不需要安装 Node.js。
 
@@ -67,7 +69,7 @@ bun run plugins:build --unsigned
 
 构建脚本把 JS 依赖编入每个插件，只保留 Node 内置模块作为外部依赖。插件无需在使用者机器上安装依赖。带原生二进制的插件需要自行提供匹配 Windows 架构与运行时的文件。
 
-后台插件以当前用户权限执行，可以访问文件、网络或启动子进程。它们共享控制器进程，适合可信插件；插件 UI 在带访问令牌的本地页面中运行，通过受限 iframe 调用自己的后台。`permissions` 是能力声明，不是操作系统权限隔离。
+后台插件以当前用户权限执行，可以访问文件、网络或启动子进程。它们共享控制器进程，适合可信插件；插件 UI 在带访问令牌的本地页面中运行，通过受限 iframe 调用自己的后台。`registry-current-user`、`wallpaper`、`process-control` 声明控制通用原生桥调用，插件 ID 与权限取自经过签名校验的 manifest；它们不是操作系统权限隔离。
 
 新增版本激活成功后替换旧版本；激活失败时保留旧版本。暂停状态跨重启保留；目录移除项会被停用并移出列表，手动移除项不会被下一轮目录检查重新添加。用户数据保存在 `%LOCALAPPDATA%/ChordControl/data/<plugin-id>`，移除插件及卸载程序时保留。
 

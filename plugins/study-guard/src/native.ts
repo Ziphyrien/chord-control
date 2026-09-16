@@ -1,137 +1,120 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createInterface } from "node:readline";
-import { appendFile, copyFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { HostService } from "../../../sdk/index.ts";
+import type { Json } from "../../../shared/protocol.ts";
+import { WallpaperPolicy } from "./wallpaper.ts";
 export type Browser = "edge" | "chrome";
 export interface StudyPlatform {
   start(blocked: (browser: Browser) => void): Promise<void>;
   launch(browser: Browser): Promise<void>;
   dispose(): Promise<void>;
 }
-function powershell(script: string): ChildProcessWithoutNullStreams {
-  return spawn(
-    "powershell.exe",
-    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script],
-    { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
-  );
-}
-async function run(script: string, input: object): Promise<void> {
-  const child = powershell(script);
-  let errors = "";
-  child.stderr.on("data", (bytes) => {
-    errors = (errors + String(bytes)).slice(-4000);
-  });
-  child.stdout.resume();
-  const timer = setTimeout(() => child.kill(), 20000);
-  try {
-    await new Promise<void>((resolve, reject) => {
-      child.once("error", reject);
-      child.once("exit", (code) =>
-        code === 0 ? resolve() : reject(new Error(errors || `Windows 操作失败 (${code})`)),
-      );
-      child.stdin.on("error", reject);
-      child.stdin.end(JSON.stringify(input));
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-}
+type Process = {
+  pid: number;
+  parentPid: number;
+  name: string;
+  executable: string;
+  createdAt: string;
+};
+const key = (process: Process) => `${process.pid}:${process.createdAt}`;
+const browserOf = (process: Process): Browser =>
+  process.name.toLowerCase() === "msedge.exe" ? "edge" : "chrome";
 export function createPlatform(
+  host: HostService,
   dataDir: string,
   bundleDir: string,
   log: (message: string) => void,
 ): StudyPlatform {
-  const owner = randomUUID(),
-    policy = join(bundleDir, "assets/wallpaper-policy.ps1"),
-    wallpaper = join(dataDir, "study-wallpaper.png");
-  let monitor: ChildProcessWithoutNullStreams | undefined,
-    active = false;
-  const simulated = process.env.CHORD_CONTROL_NATIVE_TEST === "1";
-  const record = (action: string) =>
-    appendFile(join(dataDir, "native-test.jsonl"), JSON.stringify({ action }) + "\n");
+  const policy = new WallpaperPolicy(host, dataDir, bundleDir),
+    paths = new Map<Browser, string>(),
+    allow = new Map<Browser, number>();
+  let active = false,
+    timer: ReturnType<typeof setTimeout> | undefined,
+    polling: Promise<void> | undefined;
+  let seen = new Set<string>();
+  const call = (operation: string, input: Json) =>
+    host.native(operation, input, BACKGROUND_CONTEXT);
+  async function roots(): Promise<Process[]> {
+    const rows = (await call("process.list", { names: ["msedge.exe", "chrome.exe"] })) as Process[];
+    const ids = new Set(rows.map((row) => row.pid));
+    return rows.filter((row) => !ids.has(row.parentPid));
+  }
+  async function poll(blocked: (browser: Browser) => void): Promise<void> {
+    try {
+      if (!active || !(await policy.owns())) return;
+      const rows = await roots();
+      for (const row of rows) {
+        const browser = browserOf(row);
+        paths.set(browser, row.executable);
+        if (!active || seen.has(key(row)) || (allow.get(browser) ?? 0) > Date.now()) continue;
+        await call("process.terminate", {
+          pid: row.pid,
+          createdAt: row.createdAt,
+          executable: row.executable,
+        });
+        blocked(browser);
+      }
+      seen = new Set(rows.map(key));
+    } catch (error) {
+      if (active) log(`浏览器监测: ${String(error)}`);
+    } finally {
+      if (active)
+        timer = setTimeout(() => {
+          polling = poll(blocked);
+        }, 350);
+    }
+  }
   return {
     async start(blocked) {
-      if (simulated) {
-        active = true;
-        await record("wallpaper:apply");
-        return;
-      }
-      if (process.platform !== "win32") throw new Error("学习权限仅支持 Windows");
-      await copyFile(join(bundleDir, "assets/study-wallpaper.png"), wallpaper);
-      await run(policy, { action: "apply", dataDir, owner, wallpaper });
+      // Native snapshot succeeds before policies change; no shell startup or WMI readiness wait.
+      const rows = await roots();
+      seen = new Set(rows.map(key));
+      for (const row of rows) paths.set(browserOf(row), row.executable);
+      await policy.apply();
       active = true;
-      monitor = powershell(join(bundleDir, "assets/browser-monitor.ps1"));
-      const child = monitor;
-      const lines = createInterface({ input: child.stdout });
-      child.stderr.on("data", (bytes) => log(String(bytes).slice(0, 2000)));
-      try {
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error("浏览器监测启动超时")), 15000);
-          child.once("error", (error) => {
-            clearTimeout(timer);
-            reject(error);
-          });
-          child.once("exit", (code) => {
-            clearTimeout(timer);
-            if (active) log(`浏览器监测已停止 (${code})`);
-            reject(new Error("浏览器监测已停止"));
-          });
-          lines.on("line", (line) => {
-            try {
-              const event = JSON.parse(line.replace(/^\uFEFF/, ""));
-              if (event.type === "ready") {
-                clearTimeout(timer);
-                resolve();
-              } else if (
-                event.type === "blocked" &&
-                (event.browser === "edge" || event.browser === "chrome")
-              )
-                blocked(event.browser);
-              else if (event.type === "error") log(String(event.message));
-            } catch {
-              log("浏览器监测返回无效数据");
-            }
-          });
-        });
-      } catch (error) {
-        child.kill();
-        await run(policy, { action: "restore", dataDir, owner });
-        active = false;
-        throw error;
-      }
+      timer = setTimeout(() => {
+        polling = poll(blocked);
+      }, 350);
     },
     async launch(browser) {
       if (!active) throw new Error("学习权限已停止");
-      if (simulated) {
-        await record(`launch:${browser}`);
-        return;
+      let executable = paths.get(browser);
+      if (!executable) {
+        const suffix =
+          browser === "edge"
+            ? "Microsoft/Edge/Application/msedge.exe"
+            : "Google/Chrome/Application/chrome.exe";
+        for (const folder of [
+          process.env["ProgramFiles(x86)"],
+          process.env.ProgramFiles,
+          process.env.LOCALAPPDATA,
+        ]) {
+          if (!folder) continue;
+          const candidate = join(folder, suffix);
+          try {
+            await access(candidate);
+            executable = candidate;
+            break;
+          } catch {
+            /* Try next installation location. */
+          }
+        }
       }
-      if (!monitor || monitor.exitCode !== null) throw new Error("浏览器监测未运行");
-      monitor.stdin.write(JSON.stringify({ type: "launch", browser }) + "\n");
+      if (!executable) throw new Error("未找到已安装的浏览器");
+      allow.set(browser, Date.now() + 3000);
+      try {
+        await call("process.spawn", { executable, args: ["--new-window"] });
+      } catch (error) {
+        allow.delete(browser);
+        throw error;
+      }
     },
     async dispose() {
-      if (!active) return;
       active = false;
-      if (simulated) {
-        await record("wallpaper:restore");
-        return;
-      }
-      monitor?.stdin.end();
-      if (monitor && monitor.exitCode === null) {
-        const child = monitor;
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(() => {
-            child.kill();
-            resolve();
-          }, 3000);
-          child.once("exit", () => {
-            clearTimeout(timer);
-            resolve();
-          });
-        });
-      }
-      await run(policy, { action: "restore", dataDir, owner });
+      clearTimeout(timer);
+      await polling;
+      await policy.restore();
     },
   };
 }

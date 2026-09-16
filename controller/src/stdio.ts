@@ -6,7 +6,11 @@ interface Handler {
   submit(id: string, command: ControllerCommand): void;
   report(error: unknown): void;
 }
-export function bindStdio(handler: Handler, stop: () => void): void {
+export function bindStdio(
+  handler: Handler,
+  stop: () => void,
+  internal: (value: Record<string, unknown>) => boolean = () => false,
+): void {
   const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
   input.on("line", (line) => {
     if (!line.trim()) return;
@@ -15,6 +19,7 @@ export function bindStdio(handler: Handler, stop: () => void): void {
       const value: unknown = JSON.parse(line);
       if (!object(value) || typeof value.id !== "string" || typeof value.type !== "string")
         throw new Error("命令必须包含 id 和 type");
+      if (internal(value)) return;
       if (value.type === "shutdown") {
         stop();
         return;

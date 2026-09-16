@@ -6,7 +6,8 @@ pub(crate) fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
     let show = MenuItem::with_id(app, "show", "打开控制中心", true, None::<&str>)?;
     let restart = MenuItem::with_id(app, "restart", "启动离线控制器", true, None::<&str>)?;
     let exit = MenuItem::with_id(app, "quit", "退出控制器", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &restart, &exit])?;
+    let update = MenuItem::with_id(app, "update", "检查并安装主程序更新", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &restart, &update, &exit])?;
     let icon = app
         .default_window_icon()
         .cloned()
@@ -20,6 +21,7 @@ pub(crate) fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
             "show" => request_action(app, "open"),
             "restart" => request_action(app, "open"),
             "quit" => request_action(app, "quit"),
+            "update" => crate::updater::request(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {

@@ -2,7 +2,7 @@ use crate::desktop::data_dir;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU32, Ordering},
     Mutex,
 };
 use std::time::Duration;
@@ -16,6 +16,7 @@ use tauri_plugin_shell::{
 pub(crate) struct ControllerState {
     child: Mutex<Option<CommandChild>>,
     quitting: AtomicBool,
+    failures: AtomicU32,
 }
 pub(crate) fn emit(app: &AppHandle, payload: serde_json::Value) {
     // Plugin iframes have no Tauri capabilities; only the control window gets events.
@@ -35,13 +36,16 @@ pub(crate) fn controller_command(
         return Err("Command must be an object".into());
     }
     let kind = value["type"].as_str().unwrap_or("");
-    if matches!(kind, "shutdown" | "desktop_action" | "plugin_window_closed") {
+    if matches!(
+        kind,
+        "shutdown" | "desktop_action" | "plugin_window_closed" | "native_response"
+    ) {
         return Err("Reserved desktop command".into());
     }
     if kind != "snapshot" && !desktop.unlocked.load(Ordering::SeqCst) {
         return Err("控制中心尚未解锁".into());
     }
-    let mut lock = state.child.lock().map_err(|_| "Controller lock poisoned")?;
+    let mut lock = crate::sync::lock(&state.child);
     lock.as_mut()
         .ok_or("控制器离线，请从托盘重新启动控制器")?
         .write(format!("{}\n", value).as_bytes())
@@ -49,19 +53,37 @@ pub(crate) fn controller_command(
 }
 pub(crate) fn send_internal(app: &AppHandle, value: serde_json::Value) -> Result<(), String> {
     let state = app.state::<ControllerState>();
-    let mut lock = state.child.lock().map_err(|_| "Controller lock poisoned")?;
+    let mut lock = crate::sync::lock(&state.child);
     lock.as_mut()
         .ok_or("控制器离线")?
         .write(format!("{}\n", value).as_bytes())
         .map_err(|e| e.to_string())
 }
+pub(crate) fn send_native_response(
+    app: &AppHandle,
+    pid: u32,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    let state = app.state::<ControllerState>();
+    let mut lock = crate::sync::lock(&state.child);
+    let child = lock
+        .as_mut()
+        .filter(|child| child.pid() == pid)
+        .ok_or("原生请求所属的控制器已退出")?;
+    child
+        .write(format!("{value}\n").as_bytes())
+        .map_err(|e| e.to_string())
+}
 pub(crate) fn start_controller(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<ControllerState>();
-    let mut lock = state.child.lock().map_err(|_| "Controller lock poisoned")?;
+    let mut lock = crate::sync::lock(&state.child);
+    if state.quitting.load(Ordering::SeqCst) {
+        return Err("控制器正在退出".into());
+    }
     if lock.is_some() {
         return Ok(());
     }
-    let dir = data_dir()?;
+    let dir = data_dir(app)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let (mut events, child) = app
         .shell()
@@ -74,6 +96,7 @@ pub(crate) fn start_controller(app: &AppHandle) -> Result<(), String> {
     let pid = child.pid();
     lock.replace(child);
     drop(lock);
+    let started = std::time::Instant::now();
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let log_path = dir.join("controller-stderr.log");
@@ -82,8 +105,10 @@ pub(crate) fn start_controller(app: &AppHandle) -> Result<(), String> {
                 CommandEvent::Stdout(line) => {
                     match serde_json::from_slice::<serde_json::Value>(&line) {
                         Ok(value) => {
-                            crate::desktop::handle_event(&handle, &value);
-                            emit(&handle, value);
+                            if !crate::native::handle(&handle, &value, pid) {
+                                crate::desktop::handle_event(&handle, &value);
+                                emit(&handle, value);
+                            }
                         }
                         Err(error) => emit(
                             &handle,
@@ -120,45 +145,86 @@ pub(crate) fn start_controller(app: &AppHandle) -> Result<(), String> {
             }
         }
         let state = handle.state::<ControllerState>();
-        if let Ok(mut lock) = state.child.lock() {
+        {
+            let mut lock = crate::sync::lock(&state.child);
             if lock.as_ref().map(|c| c.pid()) == Some(pid) {
                 lock.take();
             }
-        };
+        }
+        if !state.quitting.load(Ordering::SeqCst) {
+            let stable = started.elapsed() >= Duration::from_secs(60);
+            let retry = if stable {
+                state.failures.store(0, Ordering::SeqCst);
+                0
+            } else {
+                state.failures.fetch_add(1, Ordering::SeqCst)
+            };
+            if retry < 5 {
+                let retry_handle = handle.clone();
+                let delay = Duration::from_secs(1_u64 << retry.min(4));
+                std::thread::spawn(move || {
+                    std::thread::sleep(delay);
+                    if !retry_handle
+                        .state::<ControllerState>()
+                        .quitting
+                        .load(Ordering::SeqCst)
+                    {
+                        if let Err(error) = start_controller(&retry_handle) {
+                            crate::desktop::report(&retry_handle, &error);
+                        }
+                    }
+                });
+            } else {
+                crate::desktop::report(&handle, "控制器连续失败，已停止自动重启，请查看日志");
+            }
+        }
     });
     Ok(())
 }
+fn stop_controller(app: &AppHandle) {
+    if let Some(child) = crate::sync::lock(&app.state::<ControllerState>().child).as_mut() {
+        let _ = child.write(b"{\"id\":\"exit\",\"type\":\"shutdown\"}\n");
+    }
+    for _ in 0..200 {
+        if crate::sync::lock(&app.state::<ControllerState>().child).is_none() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    kill(app);
+}
 pub(crate) fn quit(app: &AppHandle) {
-    let state = app.state::<ControllerState>();
-    if state.quitting.swap(true, Ordering::SeqCst) {
+    if app
+        .state::<ControllerState>()
+        .quitting
+        .swap(true, Ordering::SeqCst)
+    {
         return;
     }
-    if let Ok(mut lock) = state.child.lock() {
-        if let Some(child) = lock.as_mut() {
-            let _ = child.write(b"{\"id\":\"exit\",\"type\":\"shutdown\"}\n");
-        }
-    }
-    let handle = app.clone();
+    let app = app.clone();
     std::thread::spawn(move || {
-        for _ in 0..50 {
-            if handle
-                .state::<ControllerState>()
-                .child
-                .lock()
-                .map(|c| c.is_none())
-                .unwrap_or(true)
-            {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        handle.exit(0);
+        crate::guard::stop();
+        stop_controller(&app);
+        app.exit(0);
     });
 }
+pub(crate) fn prepare_update(app: &AppHandle) {
+    app.state::<ControllerState>()
+        .quitting
+        .store(true, Ordering::SeqCst);
+    crate::guard::stop();
+    stop_controller(app);
+}
+pub(crate) fn resume_after_update(app: &AppHandle) {
+    app.state::<ControllerState>()
+        .quitting
+        .store(false, Ordering::SeqCst);
+    if let Err(error) = crate::guard::start(app).and_then(|()| start_controller(app)) {
+        crate::desktop::report(app, &error);
+    }
+}
 pub(crate) fn kill(app: &AppHandle) {
-    if let Ok(mut lock) = app.state::<ControllerState>().child.lock() {
-        if let Some(child) = lock.take() {
-            let _ = child.kill();
-        }
+    if let Some(child) = crate::sync::lock(&app.state::<ControllerState>().child).take() {
+        let _ = child.kill();
     }
 }

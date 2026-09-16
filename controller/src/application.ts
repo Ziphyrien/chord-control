@@ -117,9 +117,12 @@ export class ControllerApplication {
         throw new Error("未知控制器命令");
     }
   }
-  start(): void {
+  start(restored = false): void {
     this.publish();
-    this.poll();
+    // Cached plugins can serve desktop requests immediately, even when GitHub is offline.
+    // A fresh installation still discovers its initial catalogue at startup.
+    if (restored) this.schedule();
+    else this.poll();
   }
   private poll(): void {
     if (this.stopping) return;

@@ -1,10 +1,18 @@
 mod controller;
 mod desktop;
+mod guard;
+mod native;
+mod plugin_windows;
+mod sync;
 mod tray;
+mod updater;
 
 use tauri::{Manager, WindowEvent};
 
 pub fn run() {
+    if guard::handle_cli() {
+        return;
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if !args.iter().any(|arg| arg == "--background") {
@@ -18,8 +26,11 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(controller::ControllerState::default())
         .manage(desktop::DesktopState::default())
+        .manage(updater::UpdateState::default())
         .invoke_handler(tauri::generate_handler![
             controller::controller_command,
             desktop::open_data_directory
@@ -27,6 +38,8 @@ pub fn run() {
         .setup(|app| {
             desktop::ensure_autostart(app.handle()).map_err(std::io::Error::other)?;
             tray::setup(app)?;
+            guard::start(app.handle())?;
+            updater::start(app.handle());
             if let Err(error) = controller::start_controller(app.handle()) {
                 controller::emit(
                     app.handle(),
@@ -44,14 +57,17 @@ pub fn run() {
                     api.prevent_close();
                     desktop::request_action(window.app_handle(), "quit");
                 }
-            } else if let WindowEvent::Destroyed = event {
-                desktop::window_closed(window.app_handle(), window.label());
+            } else if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+                plugin_windows::user_closed(window.app_handle(), window.label());
             }
         })
         .build(tauri::generate_context!())
         .expect("Failed to initialize Chord Control")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                guard::stop();
                 controller::kill(app);
             }
         });

@@ -7,6 +7,7 @@ import {
 
 export interface HostService {
   paths(context: Context): Promise<{ dataDir: string; bundleDir: string }>;
+  native(operation: string, input: JsonValue, context: Context): Promise<JsonValue>;
   log(message: string, context: Context): Promise<void>;
   present(visible: boolean, context: Context): Promise<void>;
 }

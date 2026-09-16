@@ -1,6 +1,6 @@
 {
   "name": "com.chord.password-pad",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "使用今日密码的滑动密保盘",
   "type": "module",

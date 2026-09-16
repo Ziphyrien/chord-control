@@ -164,7 +164,7 @@ export class PluginManager {
       cached,
       validate(value) {
         assertManifest(value);
-        verifyManifest(value, key);
+        verifyManifest(value, key, false);
         if (id && value.id !== id) throw new Error("插件身份与来源不一致");
         if (installed && compareVersion(value.version, installed.version) < 0)
           throw new Error("远端版本低于本地版本");
@@ -187,7 +187,8 @@ export class PluginManager {
       validate(value) {
         assertCatalog(value);
         verifySigned(value, settings.catalogPublicKey, ALLOW_UNSIGNED);
-        for (const manifest of value.plugins) verifyManifest(manifest, settings.catalogPublicKey);
+        for (const manifest of value.plugins)
+          verifyManifest(manifest, settings.catalogPublicKey, false);
         if (
           cached?.generatedAt &&
           (!value.generatedAt || Date.parse(value.generatedAt) < Date.parse(cached.generatedAt))
