@@ -125,7 +125,8 @@ fn plugin_id_from_label(label: &str) -> Option<String> {
     let bytes = (0..encoded.len())
         .step_by(2)
         .map(|index| u8::from_str_radix(&encoded[index..index + 2], 16))
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
     String::from_utf8(bytes).ok()
 }
 
