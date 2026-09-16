@@ -10,6 +10,6 @@
 - [x] 从 workflow 移除运行测试及 Playwright 安装步骤。
 - [x] 删除密保盘提示文案。
 - [x] Oxfmt / Rustfmt 格式化、Oxlint、Knip 和静态边界检查。
-- [ ] GitHub Actions 编译成功，核验 CI 产物并发布可下载的 Windows 0.2.0 安装包。
+- [x] GitHub Actions 编译成功，核验 CI 产物并发布可下载的 Windows 0.2.0 安装包。
 
 按最新要求不在本机编译，编译和打包由 GitHub Actions 完成。双进程恢复及安装器运行行为待使用 CI 产物核验。维护与升级说明见 [docs/maintenance.md](docs/maintenance.md)。
