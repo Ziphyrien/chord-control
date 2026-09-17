@@ -192,7 +192,7 @@ impl Transport {
         while self.workers.iter().any(|worker| !worker.is_finished()) && Instant::now() < deadline {
             #[cfg(windows)]
             {
-                use std::os::windows::thread::JoinHandleExt;
+                use std::os::windows::io::AsRawHandle;
                 for worker in &self.workers {
                     unsafe {
                         windows_sys::Win32::System::IO::CancelSynchronousIo(worker.as_raw_handle());
