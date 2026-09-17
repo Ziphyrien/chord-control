@@ -1,9 +1,14 @@
 //! Signed host updates. Downloads finish before peers or plugins are stopped.
+use crate::sync::lock;
+use serde_json::{json, Value};
 use std::{
     fs,
     io::Write,
     path::PathBuf,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
     time::Duration,
 };
 use tauri::{AppHandle, Manager};
@@ -12,6 +17,23 @@ use tauri_plugin_updater::UpdaterExt;
 pub(crate) struct UpdateState {
     busy: AtomicBool,
     staging_failed: AtomicBool,
+    progress: Mutex<Progress>,
+}
+#[derive(Default)]
+struct Progress {
+    version: Option<String>,
+    error: Option<String>,
+}
+pub(crate) fn status(app: &AppHandle) -> Value {
+    let state = app.state::<UpdateState>();
+    let progress = lock(&state.progress);
+    json!({"busy":state.busy.load(Ordering::Acquire),
+        "availableVersion":progress.version,"error":progress.error})
+}
+/// The host-control grant authorizes unattended signed updates. Return before plugin disposal.
+pub(crate) fn request_plugin(app: &AppHandle, install: bool) -> Result<Value, String> {
+    let started = run(app, install, false)?;
+    Ok(json!({"started":started}))
 }
 
 #[cfg(windows)]
@@ -67,7 +89,7 @@ fn launch_installer(path: &std::path::Path) -> Result<(), String> {
     }
     command.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
-async fn check(app: &AppHandle, install: bool) -> Result<(), String> {
+async fn check(app: &AppHandle, install: bool, require_unlock: bool) -> Result<(), String> {
     let updater = app
         .updater_builder()
         .timeout(Duration::from_secs(90))
@@ -78,6 +100,7 @@ async fn check(app: &AppHandle, install: bool) -> Result<(), String> {
         .map_err(|_| "检查更新超时".to_owned())?
         .map_err(|e| e.to_string())?;
     let Some(update) = update else {
+        lock(&app.state::<UpdateState>().progress).version = None;
         if install {
             if let Some(tray) = app.tray_by_id("controller") {
                 let _ = tray.set_tooltip(Some("Chord Control — 已是最新版本"));
@@ -85,6 +108,7 @@ async fn check(app: &AppHandle, install: bool) -> Result<(), String> {
         }
         return Ok(());
     };
+    lock(&app.state::<UpdateState>().progress).version = Some(update.version.clone());
     if !install {
         if let Some(tray) = app.tray_by_id("controller") {
             let _ = tray.set_tooltip(Some(format!(
@@ -100,7 +124,7 @@ async fn check(app: &AppHandle, install: bool) -> Result<(), String> {
         .map_err(|_| "下载更新超时".to_owned())?
         .map_err(|e| e.to_string())?;
     if !crate::lifecycle::is_running(app)
-        || !app.state::<crate::desktop::DesktopState>().is_unlocked()
+        || (require_unlock && !app.state::<crate::desktop::DesktopState>().is_unlocked())
     {
         return Err("控制中心已锁定，请重新解锁后安装更新".into());
     }
@@ -117,7 +141,7 @@ async fn check(app: &AppHandle, install: bool) -> Result<(), String> {
         }
     };
     if !crate::lifecycle::is_running(app)
-        || !app.state::<crate::desktop::DesktopState>().is_unlocked()
+        || (require_unlock && !app.state::<crate::desktop::DesktopState>().is_unlocked())
     {
         let _ = fs::remove_file(&path);
         return Err("控制中心已锁定，更新已取消".into());
@@ -139,17 +163,19 @@ async fn check(app: &AppHandle, install: bool) -> Result<(), String> {
     .await
     .map_err(|e| e.to_string())?
 }
-fn run(app: &AppHandle, install: bool) {
+fn run(app: &AppHandle, install: bool, require_unlock: bool) -> Result<bool, String> {
     let state = app.state::<UpdateState>();
-    if !crate::lifecycle::is_running(app)
-        || state.staging_failed.load(Ordering::Acquire)
-        || state.busy.swap(true, Ordering::AcqRel)
-    {
-        return;
+    if !crate::lifecycle::is_running(app) || state.staging_failed.load(Ordering::Acquire) {
+        return Err("更新不可用，请重新启动主程序后重试".into());
     }
+    if state.busy.swap(true, Ordering::AcqRel) {
+        return Ok(false);
+    }
+    lock(&state.progress).error = None;
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = check(&handle, install).await {
+        if let Err(error) = check(&handle, install, require_unlock).await {
+            lock(&handle.state::<UpdateState>().progress).error = Some(error.clone());
             crate::desktop::report(&handle, &format!("主程序更新: {error}"));
         }
         handle
@@ -157,6 +183,7 @@ fn run(app: &AppHandle, install: bool) {
             .busy
             .store(false, Ordering::Release);
     });
+    Ok(true)
 }
 pub(crate) fn request(app: &AppHandle) {
     if !app.state::<crate::desktop::DesktopState>().is_unlocked() {
@@ -164,7 +191,9 @@ pub(crate) fn request(app: &AppHandle) {
         crate::desktop::request_action(app, crate::desktop::Action::Open);
         return;
     }
-    run(app, true);
+    if let Err(error) = run(app, true, true) {
+        crate::desktop::report(app, &error);
+    }
 }
 pub(crate) fn start(app: &AppHandle) {
     if cfg!(debug_assertions) {
@@ -174,7 +203,7 @@ pub(crate) fn start(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(60)).await;
         while crate::lifecycle::is_running(&handle) {
-            run(&handle, false);
+            let _ = run(&handle, false, false);
             tokio::time::sleep(Duration::from_secs(6 * 60 * 60)).await;
         }
     });

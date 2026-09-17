@@ -5,6 +5,7 @@ import {
 } from "@earendil-works/chord";
 import { withContextValue } from "@earendil-works/chord/context";
 import { PluginCaller } from "../../../sdk/index.ts";
+import { KernelCaller, type KernelSession } from "./kernel-session.ts";
 
 interface Provider {
   owner: string;
@@ -26,7 +27,7 @@ export class ServiceDirectory {
   remove(owner: string): void {
     for (const [id, entry] of this.providers) if (entry.owner === owner) this.providers.delete(id);
   }
-  source(owner: string, imports: readonly string[]): RemoteServiceSource {
+  source(owner: string, imports: readonly string[], kernel?: KernelSession): RemoteServiceSource {
     const allowed = new Set(imports);
     const provider = (id: string): RemoteServiceProvider => {
       if (!allowed.has(id)) throw new Error(`插件未声明依赖服务: ${id}`);
@@ -46,8 +47,16 @@ export class ServiceDirectory {
           assertAccess: () => options.assertAccess(),
           onError: (error) => options.onError(error),
           transport: {
-            invoke: (call, context) =>
-              provider(call.serviceId).invoke(call, withContextValue(PluginCaller, owner, context)),
+            invoke: (call, context) => {
+              let forwarded = withContextValue(
+                PluginCaller,
+                context.value(PluginCaller) ?? owner,
+                context,
+              );
+              const caller = context.value(KernelCaller) ?? kernel;
+              if (caller) forwarded = withContextValue(KernelCaller, caller, forwarded);
+              return provider(call.serviceId).invoke(call, forwarded);
+            },
             subscribe: async (id, mode, listener) => provider(id).subscribe(id, mode, listener),
           },
         });

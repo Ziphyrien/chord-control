@@ -226,6 +226,7 @@ pub(crate) fn start_controller(app: &AppHandle) -> Result<(), String> {
                 inner.connection.as_mut().unwrap().force.cancel();
             }
         }
+        crate::kernel::retire(&handle, generation);
         crate::desktop::disconnected(&handle);
         let drained = transport.stop();
         let state = handle.state::<ControllerState>();

@@ -28,5 +28,17 @@ jobs:
         if: inputs.rust
         with:
           components: rustfmt
-      - run: vp run format:rust:check
+      - name: Check Rust formatting and retain suggested formatting
         if: inputs.rust
+        run: |
+          if ! cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check; then
+            cargo fmt --manifest-path src-tauri/Cargo.toml --all
+            git diff -- src-tauri/src > "$RUNNER_TEMP/rustfmt.patch"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7.0.1
+        if: ${{ failure() && inputs.rust }}
+        with:
+          name: rust-format-suggestions
+          path: ${{ runner.temp }}/rustfmt.patch
+          if-no-files-found: ignore

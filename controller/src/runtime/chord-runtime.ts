@@ -21,6 +21,8 @@ import type { PluginRuntime, PluginPage } from "../domain/ports.ts";
 import { unpack } from "../infrastructure/archives.ts";
 import type { NativeBridge } from "../transport/native-bridge.ts";
 import { ServiceDirectory } from "./services.ts";
+import { HostKernel } from "../../../sdk/kernel.ts";
+import { KernelCaller, KernelSession } from "./kernel-session.ts";
 
 interface Access {
   phase: "starting" | "active" | "stopping" | "closed";
@@ -32,6 +34,7 @@ interface Generation {
   loaded: LoadedFacets;
   lifetime: AbortController;
   access: Access;
+  kernel: KernelSession;
 }
 interface Options {
   staging: string;
@@ -70,6 +73,7 @@ export class ChordRuntime implements PluginRuntime {
     let visible: boolean | undefined;
     const access: Access = { phase: "starting" };
     const lifetime = new AbortController();
+    const kernel = new KernelSession(this.options.native, manifest.id, manifest.permissions ?? []);
     try {
       await mkdir(dataDir, { recursive: true });
       loaded = await createFacetBundleLoader({
@@ -82,7 +86,7 @@ export class ChordRuntime implements PluginRuntime {
       }).load();
       const capabilities = defineFacet({
         id: "chord-control.host",
-        setup: (env) =>
+        setup: (env) => {
           env.provide(ControlHost, {
             paths: async () => ({ dataDir, bundleDir: root }),
             log: async (detail) => this.options.log(manifest.id, String(detail).slice(0, 4000)),
@@ -102,11 +106,23 @@ export class ChordRuntime implements PluginRuntime {
               visible = next;
               if (access.phase === "active") await this.options.present(manifest.id, next);
             },
-          }),
+          });
+          env.provide(HostKernel, {
+            call: (operation, input, context) => {
+              if (access.phase === "stopping" || access.phase === "closed")
+                throw new Error("插件 API 已停止");
+              if (!manifest.permissions?.includes("host-control"))
+                throw new Error("插件未声明 host-control 权限");
+              return (context.value(KernelCaller) ?? kernel).call(operation, input, context);
+            },
+          });
+        },
       });
       host = await createFacetHost({
         facets: [capabilities, ...loaded.facets],
-        serviceSources: [this.services.source(manifest.id, manifest.services?.requires ?? [])],
+        serviceSources: [
+          this.services.source(manifest.id, manifest.services?.requires ?? [], kernel),
+        ],
         onError: (error) => this.options.log(manifest.id, error.message),
       });
       if (
@@ -117,17 +133,19 @@ export class ChordRuntime implements PluginRuntime {
       if (manifest.ui && !host.services.catalogue.some((item) => item.serviceId === PluginUi.id))
         throw new Error("插件声明了界面但未提供 PluginUi 服务");
       this.services.publish(manifest.id, host.services, manifest.services?.provides ?? []);
-      this.running.set(manifest.id, { manifest, root, host, loaded, lifetime, access });
+      this.running.set(manifest.id, { manifest, root, host, loaded, lifetime, access, kernel });
       access.phase = "active";
       if (visible !== undefined) await this.options.present(manifest.id, visible);
     } catch (error) {
       access.phase = "stopping";
+      kernel.stop();
       lifetime.abort();
       this.running.delete(manifest.id);
       this.services.remove(manifest.id);
       const failures: unknown[] = [];
       for (const cleanup of [
         () => host?.dispose(),
+        () => kernel.close(),
         () => loaded?.dispose(),
         () => rm(root, { recursive: true, force: true }),
       ]) {
@@ -152,6 +170,7 @@ export class ChordRuntime implements PluginRuntime {
     const current = this.running.get(id);
     if (!current) return;
     current.access.phase = "stopping";
+    current.kernel.stop();
     current.lifetime.abort(new Error("插件正在停止"));
     this.running.delete(id);
     this.services.remove(id);
@@ -159,6 +178,7 @@ export class ChordRuntime implements PluginRuntime {
     // Keep native replies available while plugin-owned cleanup restores resources.
     for (const cleanup of [
       () => current.host.dispose(),
+      () => current.kernel.close(),
       () => this.options.present(id, false),
       () => current.loaded.dispose(),
       () => rm(current.root, { recursive: true, force: true }),

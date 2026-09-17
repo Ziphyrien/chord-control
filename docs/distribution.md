@@ -8,6 +8,8 @@
 
 通过 `sdk/index.ts` 使用主程序提供的能力；插件界面通过 `sdk/ui.ts` 调用自己的服务。依赖关系决定启动顺序，同一个服务应有唯一提供者。
 
+窗口、托盘、主程序更新和独立原生辅助程序的扩展方式见 [插件 API 与热更新](plugin-api.md)。
+
 ## 配置发布密钥
 
 运行 `vp run keys:generate` 生成 Ed25519 密钥。将私钥保存为仓库 Secret `PLUGIN_SIGNING_PRIVATE_KEY`，将公钥保存到 `config/plugin-public.pem`。已经发布的仓库继续使用现有密钥。

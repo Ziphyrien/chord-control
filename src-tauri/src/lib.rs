@@ -2,6 +2,7 @@
 mod controller;
 mod desktop;
 mod guard;
+mod kernel;
 mod lifecycle;
 mod logging;
 mod native;
@@ -35,6 +36,7 @@ pub fn run() -> Result<(), String> {
         .manage(desktop::DesktopState::default())
         .manage(lifecycle::Lifecycle::default())
         .manage(native::NativeState::default())
+        .manage(kernel::KernelState::default())
         .manage(plugin_windows::WindowState::default())
         .manage(updater::UpdateState::default())
         .invoke_handler(tauri::generate_handler![

@@ -10,6 +10,9 @@ const grants: Readonly<Record<string, string>> = {
   "process.list": "process-control",
   "process.spawn": "process-control",
   "process.terminate": "process-control",
+  "host.open": "host-control",
+  "host.call": "host-control",
+  "host.close": "host-control",
 };
 interface Pending {
   settle(result: { ok: true; value: Json } | { ok: false; error: Error }): void;

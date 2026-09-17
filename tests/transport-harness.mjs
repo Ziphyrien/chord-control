@@ -122,6 +122,9 @@ export async function createTransportHarness(options = {}) {
     events,
     native,
     publicKey: keys.publicKey,
+    get pid() {
+      return child?.pid;
+    },
     get snapshot() {
       return snapshot;
     },
@@ -147,7 +150,7 @@ export async function createTransportHarness(options = {}) {
     },
     async fixture(version = "1.0.0", extra = {}) {
       const id = extra.id ?? fixtureId,
-        source = fixtureSource(version, extra),
+        source = extra.source ?? fixtureSource(version, extra),
         hash = createHash("sha256").update(source).digest(),
         file = `worker-${hash.toString("hex")}.cjs`;
       const facet = {
@@ -174,7 +177,7 @@ export async function createTransportHarness(options = {}) {
           artifactUrl: baseUrl + artifactPath,
           artifactSha256: createHash("sha256").update(zip).digest("hex"),
           ui: "ui/index.html",
-          permissions: extra.native || extra.cleanup ? ["wallpaper"] : [],
+          permissions: extra.permissions ?? (extra.native || extra.cleanup ? ["wallpaper"] : []),
           ...(extra.provideService || extra.requireService
             ? {
                 services: {
@@ -183,6 +186,7 @@ export async function createTransportHarness(options = {}) {
                 },
               }
             : {}),
+          ...(extra.services ? { services: extra.services } : {}),
           ...(extra.hooks ? { hooks: ["desktop.open"] } : {}),
         },
         keys.privateKey,

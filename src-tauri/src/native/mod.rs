@@ -117,6 +117,37 @@ pub(crate) fn handle(app: &AppHandle, value: &Value, generation: Generation) -> 
         generation,
         id: id.clone(),
     };
+    if request.operation.starts_with("host.") {
+        let handle = app.clone();
+        let response_id = id.clone();
+        if let Err(error) = app.run_on_main_thread(move || {
+            let _ticket = ticket;
+            if !crate::controller::is_current(&handle, generation) {
+                return;
+            }
+            let result = if request.kind != "native_request"
+                || !crate::wire::valid_plugin_id(&request.plugin_id)
+                || request.id.is_empty()
+                || request.id.len() > 100
+                || request.permission != "host-control"
+            {
+                Err("无效宿主能力请求".into())
+            } else {
+                crate::kernel::execute(
+                    &handle,
+                    generation,
+                    &request.plugin_id,
+                    &request.operation,
+                    &request.input,
+                )
+            };
+            reply(&handle, generation, &response_id, result);
+        }) {
+            lock(&app.state::<NativeState>().active).remove(&(generation, id.clone()));
+            reply(app, generation, &id, Err(error.to_string()));
+        }
+        return true;
+    }
     if let Err(error) = std::thread::Builder::new()
         .name("native-capability".into())
         .spawn(move || {
