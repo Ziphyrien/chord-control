@@ -5,6 +5,17 @@ on:
     tags: ["app-v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      recover_run_id:
+        description: "Existing successful Windows run whose artifact should complete a draft release"
+        required: false
+        type: string
+        default: ""
+      release_tag:
+        description: "Draft app tag to recover"
+        required: false
+        type: string
+        default: "app-v0.4.2"
 permissions:
   contents: read
 concurrency:
@@ -15,10 +26,12 @@ env:
   TAURI_TARGET_TRIPLE: x86_64-pc-windows-msvc
 jobs:
   checks:
+    if: github.event_name != 'workflow_dispatch' || inputs.recover_run_id == ''
     uses: ./.github/workflows/quality.yml
     with:
       rust: true
   build:
+    if: github.event_name != 'workflow_dispatch' || inputs.recover_run_id == ''
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -61,6 +74,49 @@ jobs:
           name: chord-control-frontend
           path: dist/
           if-no-files-found: error
+  recover-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.recover_run_id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1.20.0
+        with:
+          node-version-file: .node-version
+          cache: true
+          run-install: false
+      - run: vp install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v8
+        with:
+          name: chord-control-windows-x64
+          path: src-tauri/
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.recover_run_id }}
+          github-token: ${{ github.token }}
+      - name: Upload missing runtime without replacing existing assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          sidecar="$(find src-tauri -type f -name 'plugin-controller-x86_64-pc-windows-msvc.exe' -print -quit)"
+          test -n "$sidecar"
+          if ! gh release view "$RELEASE_TAG" --repo "$REPOSITORY" --json assets --jq '.assets[].name' | grep -Fqx 'plugin-controller-x86_64-pc-windows-msvc.exe'; then
+            gh release upload "$RELEASE_TAG" "$sidecar" --repo "$REPOSITORY"
+          fi
+      - name: Verify all assets and publish the draft
+        env:
+          CHORD_CONTROL_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_TYPE: tag
+          GITHUB_REF_NAME: ${{ inputs.release_tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: vp node scripts/publish-app.mjs
   publish:
     if: startsWith(github.ref, 'refs/tags/app-v')
     needs: [checks, build]
