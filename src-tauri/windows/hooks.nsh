@@ -3,7 +3,7 @@
   ${If} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
     ; The helper revokes before draining and has a 45s deadline. nsExec also bounds
     ; a loader failure; installer errors cannot silently replace a running host.
-    nsExec::ExecToStack /TIMEOUT=50000 '$"$INSTDIR\${MAINBINARYNAME}.exe$" --maintenance-stop'
+    nsExec::ExecToStack /TIMEOUT=50000 '"$INSTDIR\${MAINBINARYNAME}.exe" --maintenance-stop'
     Pop $0
     Pop $1
     ${If} $0 != "0"
@@ -28,11 +28,22 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  ; Repair the malformed command written by 0.3.0, while preserving a disabled entry.
+  ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Chord Control"
+  StrCpy $1 $0 2
+  ${If} $1 == '$$"'
+    ClearErrors
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Chord Control" '"$INSTDIR\${MAINBINARYNAME}.exe" --background'
+    ${If} ${Errors}
+      SetErrorLevel 1
+      Abort "Could not save startup settings. Please retry."
+    ${EndIf}
+  ${EndIf}
   ; Preserve the user's existing login-start choice across every upgrade.
   ${IfNot} ${FileExists} "$LOCALAPPDATA\ChordControl\first-run-complete"
     ClearErrors
     CreateDirectory "$LOCALAPPDATA\ChordControl"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Chord Control" '$"$INSTDIR\${MAINBINARYNAME}.exe$" --background'
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Chord Control" '"$INSTDIR\${MAINBINARYNAME}.exe" --background'
     ${If} ${Errors}
       SetErrorLevel 1
       Abort "Could not enable automatic startup. Please retry."

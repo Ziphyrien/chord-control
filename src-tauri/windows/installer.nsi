@@ -126,7 +126,7 @@ Section "WebView2 runtime"
       !error "Unsupported WebView2 installation mode"
     !endif
     ; Never invoke a machine updater or request elevation. This child inherits our user token.
-    nsExec::ExecToStack /TIMEOUT=180000 '$"$PLUGINSDIR\WebViewSetup.exe$" ${WEBVIEWARGS} /install'
+    nsExec::ExecToStack /TIMEOUT=180000 '"$PLUGINSDIR\WebViewSetup.exe" ${WEBVIEWARGS} /install'
     Pop $0
     Pop $1
     ${If} $0 != "0"
@@ -180,7 +180,7 @@ Section "Chord Control"
   !insertmacro NSIS_HOOK_POSTINSTALL
   ; Launch as soon as installation succeeds, before displaying the finish page.
   ClearErrors
-  Exec '$"$INSTDIR\${MAINBINARYNAME}.exe$" --background'
+  Exec '"$INSTDIR\${MAINBINARYNAME}.exe" --background'
   ${If} ${Errors}
     DetailPrint "Could not start Chord Control. Open it from the installation folder."
     MessageBox MB_OK|MB_ICONEXCLAMATION "安装已完成，但程序未能启动。请从安装目录打开 Chord Control。" /SD IDOK

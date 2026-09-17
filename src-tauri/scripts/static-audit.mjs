@@ -221,6 +221,10 @@ assert(read("src/shell_launch.rs").includes("QueryActiveShellView"));
 assert(read("src/guard/session.rs").includes("Guard resume token was revoked"));
 assert(read("src/native/process.rs").includes('"createdAt":created_at'));
 const installer = read("windows/installer.nsi");
+assert(
+  !/(?<!\$)\$"/.test(installer + read("windows/hooks.nsh")),
+  "NSIS command contains a literal dollar before a quote",
+);
 assert(installer.includes("RequestExecutionLevel user"));
 assert(!/^\s*(WriteUninstaller|CreateShortCut|Section\s+['"]?Uninstall)\b/im.test(installer));
 assert(
