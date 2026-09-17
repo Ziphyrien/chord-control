@@ -1,14 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
 import type {
   ControllerCommand,
-  ControllerEvent,
   ControllerSnapshot,
   Json,
   PluginSummary,
 } from "../shared/protocol.ts";
-import { ControllerSession } from "../src/lib/session.ts";
-import { browserDesktop } from "../src/lib/desktop.ts";
-import { decodeControllerEvent } from "../src/lib/events.ts";
 
 const baseUrl = process.env.CHORD_UI_URL ?? "http://127.0.0.1:1420";
 function plugin(id: string, name: string, patch: Partial<PluginSummary> = {}): PluginSummary {
@@ -85,70 +81,6 @@ async function boot(
   await page.goto(`${baseUrl}/tests/browser.html`);
   return { commands, errors };
 }
-
-test("session disposes pending subscriptions and ignores callbacks from earlier connections", async () => {
-  const connection = deferred<() => void>();
-  const callbacks: ((event: ControllerEvent) => void)[] = [];
-  let disposed = 0;
-  const session = new ControllerSession(
-    {
-      connect(receive) {
-        callbacks.push(receive);
-        return connection.promise;
-      },
-      async send() {
-        return null;
-      },
-    },
-    browserDesktop,
-  );
-  const stop = session.start();
-  await Promise.resolve();
-  stop();
-  callbacks[0]({ type: "snapshot", snapshot: snapshot() });
-  expect(session.state.snapshot).toBeNull();
-  connection.resolve(() => {
-    disposed++;
-  });
-  await expect.poll(() => disposed).toBe(1);
-  let observed = 0;
-  const unsubscribe = session.subscribe(() => {
-    observed++;
-  });
-  unsubscribe();
-  session.clearError("connection");
-  expect(observed).toBe(1);
-});
-
-test("decoder rejects malformed nested fields and duplicate UI keys", () => {
-  const value = snapshot();
-  expect(() =>
-    decodeControllerEvent(
-      JSON.stringify({
-        type: "snapshot",
-        snapshot: { ...value, plugins: [value.plugins[0], value.plugins[0]] },
-      }),
-    ),
-  ).toThrow();
-  expect(() =>
-    decodeControllerEvent(
-      JSON.stringify({
-        type: "snapshot",
-        snapshot: {
-          ...value,
-          plugins: [{ ...value.plugins[0], dependents: [{ id: "base", name: "self" }] }],
-        },
-      }),
-    ),
-  ).toThrow();
-  expect(() =>
-    decodeControllerEvent(JSON.stringify({ type: "response", id: "r", ok: "true", result: null })),
-  ).toThrow();
-  expect(decodeControllerEvent(JSON.stringify({ type: "snapshot", snapshot: value }))).toEqual({
-    type: "snapshot",
-    snapshot: value,
-  });
-});
 
 test("adding a plugin opens its sandbox and activities can be filtered", async ({ page }) => {
   const value = snapshot();

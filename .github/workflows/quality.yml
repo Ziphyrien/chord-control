@@ -1,4 +1,4 @@
-name: Static checks
+name: Quality checks
 on:
   workflow_call:
     inputs:
@@ -24,7 +24,7 @@ jobs:
       - run: vp check
       - run: vp run check:svelte
       - run: vp run knip
-      - run: vp test tests/configuration.test.mjs tests/periodic.test.mjs tests/controller.test.mjs tests/transport.test.mjs src/lib/frontend.test.ts
+      - run: vp test
       - uses: dtolnay/rust-toolchain@stable
         if: inputs.rust
         with:
@@ -37,9 +37,11 @@ jobs:
             git diff -- src-tauri/src > "$RUNNER_TEMP/rustfmt.patch"
             exit 1
           fi
-      - name: Test update retry policy
+      - name: Test native state policies
         if: inputs.rust
         run: |
+          rustc --edition=2021 --test src-tauri/src/kernel/visibility.rs -o "$RUNNER_TEMP/visibility-tests"
+          "$RUNNER_TEMP/visibility-tests"
           rustc --edition=2021 --test src-tauri/src/updater/policy.rs -o "$RUNNER_TEMP/update-policy-tests"
           "$RUNNER_TEMP/update-policy-tests"
       - uses: actions/upload-artifact@v7.0.1

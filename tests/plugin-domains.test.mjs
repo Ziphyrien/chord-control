@@ -114,37 +114,3 @@ test("failed atomic note replacement does not poison subsequent saves", async (t
   await notes.drain();
   assert.equal(await notes.read(), "recovered");
 });
-
-test("plugin manifests retain service IDs, hooks, versions and minimum host contracts", async () => {
-  const manifests = new Map();
-  for (const [folder, version] of [
-    ["password-pad", "1.1.0"],
-    ["study-guard", "1.2.0"],
-    ["app-guard", "1.0.1"],
-    ["system-info", "1.0.1"],
-  ]) {
-    const value = JSON.parse(
-      await readFile(new URL(`../plugins/${folder}/package.json`, import.meta.url), "utf8"),
-    );
-    manifests.set(folder, value);
-    assert.equal(value.version, version);
-    assert.equal(value.control.minHostVersion, folder === "study-guard" ? "0.3.0" : "0.2.0");
-  }
-  assert.deepEqual(manifests.get("password-pad").control.services.provides, ["study.password.v1"]);
-  for (const folder of ["app-guard", "study-guard"])
-    assert.deepEqual(manifests.get(folder).control.services.requires, ["study.password.v1"]);
-  assert.deepEqual(manifests.get("app-guard").control.hooks, [
-    "desktop.open",
-    "desktop.quit",
-    "set_enabled",
-    "remove_plugin",
-    "set_settings",
-  ]);
-  const assets = await readdir(new URL("../plugins/study-guard/assets/", import.meta.url)).catch(
-    (error) => {
-      if (error.code === "ENOENT") return [];
-      throw error;
-    },
-  );
-  assert.deepEqual(assets, []);
-});

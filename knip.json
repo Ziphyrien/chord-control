@@ -8,8 +8,10 @@
         "controller/src/index.ts",
         "sdk/**/*.ts",
         "shared/**/*.ts",
-        "scripts/*.mjs",
-        "tests/*.{mjs,ts}",
+        "scripts/{build-controller,build-sidecar,build-plugins,prepare-app-release,publish-app,publish-plugins,generate-key}.mjs",
+        "tests/*.test.mjs",
+        "tests/ui.spec.ts",
+        "tests/browser.ts",
         "vite.config.ts",
         "playwright.config.ts"
       ],

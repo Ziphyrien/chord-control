@@ -14,7 +14,7 @@ Vite+ 使用项目固定的 Node 版本和 Bun 1.4.2；独立运行时打包需�
 | `vp build`             | 构建前端                      |
 | `vp run build:windows` | 构建 Windows 安装包           |
 
-发布构建在 GitHub Actions 执行。静态检查与构建并行，发布等待两者通过。
+发布构建在 GitHub Actions 执行。格式、类型和源码行为测试与构建并行，发布等待两者通过。
 
 `vp` 的内置命令与 `package.json` 脚本分开：运行自定义脚本时使用 `vp run <名称>`。
 格式、lint、测试和前端配置集中在 `vite.config.ts`。

@@ -12,7 +12,7 @@ export const fixtureId = "com.test.fixture";
 const context =
   'const context={abortSignal:undefined,value(){return undefined},toString(){return "fixture"}};';
 /** A hand-written CommonJS fixture: packaging these bytes requires no TS, Vite, Rust or SEA build. */
-export function fixtureSource(version, options = {}) {
+function fixtureSource(version, options = {}) {
   return `${context}
 exports.default={id:${JSON.stringify(options.id ?? fixtureId)},setup(env){
  const host=env.use({id:"chord-control.host",local:false});
