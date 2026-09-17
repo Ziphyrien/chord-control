@@ -190,7 +190,7 @@ test("adding a plugin opens its sandbox and activities can be filtered", async (
   await page.getByRole("button", { name: "返回插件" }).click();
   await page.getByRole("navigation").getByRole("button", { name: "活动", exact: true }).click();
   await expect(page.getByRole("heading", { name: "插件已添加", exact: true })).toBeVisible();
-  await page.getByRole("combobox", { name: "筛选活动" }).click();
+  await page.getByRole("button", { name: "筛选活动" }).click();
   await page.getByRole("option", { name: "需要留意" }).click();
   await expect(page.getByRole("heading", { name: "没有需要留意的记录" })).toBeVisible();
   expect(h.errors).toEqual([]);
