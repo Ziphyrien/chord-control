@@ -89,7 +89,10 @@ test(
   "API modules add methods live, preserve caller grants and recover failed replacements",
   { timeout: 40000 },
   async (t) => {
-    const h = await createTransportHarness({ native: () => null });
+    const h = await createTransportHarness({
+      native: () => null,
+      ...(process.env.CHORD_TEST_SEA ? { sea: process.env.CHORD_TEST_SEA } : {}),
+    });
     t.onTestFinished(() => h.close());
     const provider = (version, fail = false) =>
       h.fixture(version, {
