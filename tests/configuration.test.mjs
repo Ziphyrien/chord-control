@@ -32,7 +32,7 @@ test("v0.2 configuration migrates installed and paused plugins, publisher pin an
     ],
     ignoredCatalogIds: ["com.removed"],
   });
-  assert.equal(migrated.format, 2);
+  assert.equal(migrated.format, 3);
   assert.equal(migrated.plugins[0].enabled, false);
   assert.deepEqual(migrated.plugins[0].installed, release);
   assert.deepEqual(migrated.plugins[0].available, release);
@@ -67,6 +67,31 @@ test("five-minute defaults and old settings preserve user choices independently"
     assert.throws(() => parseSettings({ ...custom, appCheckIntervalMinutes: value }));
   for (const value of [null, "false", 0])
     assert.throws(() => parseSettings({ ...custom, appAutoUpdate: value }));
+});
+test("legacy thirty-minute default migrates once and subsequent explicit thirty-minute choice persists", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "chord-config-migration-"));
+  t.onTestFinished(() => rm(root, { recursive: true, force: true }));
+  const file = join(root, "config.json");
+  await writeFile(
+    file,
+    JSON.stringify({
+      format: 2,
+      settings: { ...defaultSettings(), checkIntervalMinutes: 30, autoUpdate: false },
+      plugins: [],
+      suppressed: [],
+    }),
+  );
+  const store = new ConfigStore(root);
+  await store.load();
+  assert.equal(store.snapshot().settings.checkIntervalMinutes, 5);
+  assert.equal(store.snapshot().settings.autoUpdate, false);
+  assert.equal(JSON.parse(await readFile(file, "utf8")).format, 3);
+  const custom = store.snapshot();
+  custom.settings.checkIntervalMinutes = 30;
+  await store.commit(custom);
+  const reloaded = new ConfigStore(root);
+  await reloaded.load();
+  assert.equal(reloaded.snapshot().settings.checkIntervalMinutes, 30);
 });
 test("corrupt and unsupported configuration is never silently overwritten", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "chord-config-"));

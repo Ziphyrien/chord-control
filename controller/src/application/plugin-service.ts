@@ -16,7 +16,7 @@ import {
   installedGraph,
   reconcileCatalog,
 } from "../domain/reconciliation.ts";
-import { hasUpdate, verifyRelease } from "../domain/releases.ts";
+import { completed, hasUpdate, verifyRelease } from "../domain/releases.ts";
 import type {
   Archives,
   ConfigRepository,
@@ -58,8 +58,40 @@ export class PluginService {
       this.lifecycle.errors,
     );
   }
-  restore(): Promise<void> {
-    return this.lifecycle.restore();
+  async restore(): Promise<void> {
+    const { repository, archives, log } = this.dependencies;
+    const config = repository.snapshot();
+    const retired = config.plugins.filter(
+      (plugin) => plugin.installed && completed(plugin.installed),
+    );
+    if (retired.length) {
+      const ids = new Set(retired.map((plugin) => plugin.id));
+      config.plugins = config.plugins.filter((plugin) => !ids.has(plugin.id));
+      for (const plugin of retired) {
+        verifyRelease(
+          plugin.installed!,
+          plugin.source.publicKey,
+          this.dependencies.allowUnsigned,
+          false,
+        );
+        if (
+          !config.suppressed.some(
+            (item) => item.id === plugin.id && sourceKey(item.source) === sourceKey(plugin.source),
+          )
+        )
+          config.suppressed.push({ id: plugin.id, source: plugin.source });
+      }
+      await repository.commit(config);
+      for (const plugin of retired) {
+        try {
+          await archives.purge(plugin.installed!);
+        } catch (error) {
+          log("一次性插件清理失败", `${plugin.id}: ${message(error)}`, "warning");
+        }
+        log("一次性插件已移除", plugin.installed!.name);
+      }
+    }
+    await this.lifecycle.restore();
   }
   private registration(config: Configuration, id: string): Registration {
     const found = config.plugins.find((item) => item.id === id);

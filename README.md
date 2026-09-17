@@ -30,4 +30,4 @@ Windows 托盘工具，集中管理插件、自动同步更新，并提供密保
 
 每日密码是“月份与日期之和 + 星期英文首字母”。例如 3 月 15 日星期一为 `18M`。一次验证有效期为 120 秒，可尝试 5 次，最多输入 32 个字符。
 
-[问题处理](docs/maintenance.md) · [发布插件](docs/distribution.md) · [开发](docs/development.md) · [版本说明](docs/releases/0.4.1.md)
+[问题处理](docs/maintenance.md) · [发布插件](docs/distribution.md) · [开发](docs/development.md) · [版本说明](docs/releases/0.4.2.md)

@@ -204,8 +204,17 @@ nav {
   background: #29362b;
   color: #d6e9cc;
 }
-.connection {
+.sidebar-footer {
   margin-top: auto;
+  display: grid;
+  gap: 12px;
+}
+.app-version {
+  padding: 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.connection {
   padding: 0 12px;
   color: var(--danger);
   font-size: 12px;

@@ -13,6 +13,7 @@ export interface PluginManifest {
   signature?: string;
   description?: string;
   minHostVersion?: string;
+  retireAfterHostVersion?: string;
   chordVersion?: string;
   entry?: string;
   ui?: string;

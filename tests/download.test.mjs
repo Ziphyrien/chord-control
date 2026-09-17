@@ -1,7 +1,7 @@
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
-import { downloadFromSources } from "../controller/src/infrastructure/downloads.ts";
-import { githubSources } from "../controller/src/infrastructure/github.ts";
+import { downloadFromSources } from "../shared/downloads.ts";
+import { githubSources } from "../shared/github.ts";
 
 const direct = {
   id: "direct",

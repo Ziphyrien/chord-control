@@ -2,7 +2,7 @@ export interface DownloadSource {
   id: string;
   url: string;
 }
-const mirrors = ["https://ghfast.top/", "https://gh-proxy.com/", "https://ghproxy.net/"] as const;
+import mirrors from "./github-mirrors.json" with { type: "json" };
 
 /** Only public GitHub release/raw routes are sent to mirror operators. Trust is still signature based. */
 export function githubSources(address: string): DownloadSource[] {

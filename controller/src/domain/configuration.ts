@@ -35,7 +35,7 @@ interface Suppression {
   source: PluginSource;
 }
 export interface Configuration {
-  format: 2;
+  format: 3;
   settings: ControllerSettings;
   plugins: Registration[];
   suppressed: Suppression[];
@@ -67,13 +67,14 @@ function readSource(value: unknown, allowUnsigned: boolean): PluginSource {
   return { kind: value.kind, url, publicKey: rawKey ? normalizePublicKey(rawKey) : "" };
 }
 export function emptyConfiguration(): Configuration {
-  return { format: 2, settings: defaultSettings(), plugins: [], suppressed: [] };
+  return { format: 3, settings: defaultSettings(), plugins: [], suppressed: [] };
 }
 /** Existing v0.1/0.2 config is migrated in memory and never replaced on parse failure. */
 export function readConfiguration(input: unknown, allowUnsigned = false): Configuration {
   if (!object(input) || !Array.isArray(input.plugins) || input.plugins.length > 100)
     throw new Error("config.json 格式错误，请修复或备份后重新配置");
-  if (input.format !== undefined && input.format !== 2) throw new Error("不支持的配置版本");
+  if (input.format !== undefined && input.format !== 2 && input.format !== 3)
+    throw new Error("不支持的配置版本");
   const settings = settingsFrom(
     input.settings ?? {
       ...defaultSettings(),
@@ -82,6 +83,8 @@ export function readConfiguration(input: unknown, allowUnsigned = false): Config
     },
     allowUnsigned,
   );
+  if (input.format !== 3 && settings.checkIntervalMinutes === 30)
+    settings.checkIntervalMinutes = defaultSettings().checkIntervalMinutes;
   const current = catalogSource(settings);
   const plugins = input.plugins.map((value): Registration => {
     if (!object(value)) throw new Error("插件配置格式错误");
@@ -137,7 +140,7 @@ export function readConfiguration(input: unknown, allowUnsigned = false): Config
     assertId(item.id);
     return { id: item.id, source: readSource(item.source, allowUnsigned) };
   });
-  const result: Configuration = { format: 2, settings, plugins, suppressed };
+  const result: Configuration = { format: 3, settings, plugins, suppressed };
   if (input.catalogCache !== undefined) {
     assertCatalog(input.catalogCache);
     verifySigned(input.catalogCache, settings.catalogPublicKey, allowUnsigned);

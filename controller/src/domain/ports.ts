@@ -9,6 +9,7 @@ export interface Archives {
   read(manifest: PluginManifest): Promise<Uint8Array>;
   write(manifest: PluginManifest, bytes: Uint8Array): Promise<void>;
   validate(manifest: PluginManifest, bytes: Uint8Array): Promise<void>;
+  purge(manifest: PluginManifest): Promise<void>;
 }
 export interface ReleaseSource {
   manifest(

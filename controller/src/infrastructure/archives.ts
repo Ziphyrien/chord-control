@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { unzipSync } from "fflate";
 import { readFacetBundleArtifact, readFacetBundleManifest } from "@earendil-works/chord/node";
 import type { PluginManifest } from "../../../shared/protocol.ts";
-import { safePath } from "../../../shared/plugin-format.ts";
+import { safePath, assertId } from "../../../shared/plugin-format.ts";
 import { atomicWrite } from "./files.ts";
 import type { Archives } from "../domain/ports.ts";
 
@@ -69,14 +69,21 @@ export async function unpack(
 export class ArchiveStore implements Archives {
   readonly directory: string;
   readonly staging: string;
+  private readonly data: string;
   constructor(root: string) {
     this.directory = join(root, "artifacts");
     this.staging = join(root, "staging");
+    this.data = join(root, "data");
   }
   async prepare(): Promise<void> {
     await mkdir(this.directory, { recursive: true });
     await rm(this.staging, { recursive: true, force: true });
     await mkdir(this.staging, { recursive: true });
+  }
+  async purge(manifest: PluginManifest): Promise<void> {
+    assertId(manifest.id);
+    await rm(join(this.data, manifest.id), { recursive: true, force: true });
+    await rm(join(this.directory, `${manifest.artifactSha256}.zip`), { force: true });
   }
   async read(manifest: PluginManifest): Promise<Uint8Array> {
     const bytes = await readFile(join(this.directory, `${manifest.artifactSha256}.zip`));

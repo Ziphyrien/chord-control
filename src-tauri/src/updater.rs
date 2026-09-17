@@ -1,4 +1,5 @@
 //! Signed host updates. Downloads finish before peers or plugins are stopped.
+mod network;
 mod policy;
 use crate::sync::lock;
 use policy::Policy;
@@ -14,7 +15,6 @@ use std::{
     time::Duration,
 };
 use tauri::{AppHandle, Manager};
-use tauri_plugin_updater::UpdaterExt;
 #[derive(Default)]
 pub(crate) struct UpdateState {
     busy: AtomicBool,
@@ -120,15 +120,7 @@ async fn check(
     require_unlock: bool,
     automatic: bool,
 ) -> Result<(), String> {
-    let updater = app
-        .updater_builder()
-        .timeout(Duration::from_secs(90))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let update = tokio::time::timeout(Duration::from_secs(95), updater.check())
-        .await
-        .map_err(|_| "检查更新超时".to_owned())?
-        .map_err(|e| e.to_string())?;
+    let update = network::check(app).await?;
     let Some(update) = update else {
         lock(&app.state::<UpdateState>().progress).version = None;
         if install {
@@ -148,11 +140,9 @@ async fn check(
         }
         return Ok(());
     }
-    // tauri-plugin-updater verifies the unchanged embedded Minisign public key here.
-    let bytes = tokio::time::timeout(Duration::from_secs(180), update.download(|_, _| {}, || {}))
+    let bytes = tokio::time::timeout(Duration::from_secs(180), network::download(&update))
         .await
-        .map_err(|_| "下载更新超时".to_owned())?
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| "下载更新超时".to_owned())??;
     if automatic && !automatic_install_enabled(app) {
         return Ok(());
     }

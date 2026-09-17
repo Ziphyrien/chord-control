@@ -1,5 +1,5 @@
-import { assertUrl } from "../../../shared/plugin-format.ts";
-import { message, object } from "../../../shared/validation.ts";
+import { assertUrl } from "./plugin-format.ts";
+import { message, object } from "./validation.ts";
 import type { DownloadSource } from "./github.ts";
 
 export interface DownloadOptions<T> {

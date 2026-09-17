@@ -180,3 +180,33 @@ test("graph changes after confirmation reject stale affected ids before any stop
   assert.equal(h.calls.length, 0);
   await h.service.close();
 });
+
+test("completed one-shot plugins retire before activation and cannot return through catalogue sync", async () => {
+  const release = manifest("upgrade.bridge", { retireAfterHostVersion: "0.4.2" });
+  const h = await applicationFixture([registration(release)]);
+  try {
+    assert.equal(h.runtime.has(release.id), false);
+    assert.equal(h.service.summaries().length, 0);
+    assert.equal(h.repository.snapshot().suppressed[0].id, release.id);
+    await h.service.checkUpdates();
+    assert.equal(h.service.summaries().length, 0);
+    assert.equal(
+      h.calls.some((call) => call.startsWith("download:")),
+      false,
+    );
+    assert(h.events.some((event) => event[0] === "一次性插件已移除"));
+  } finally {
+    await h.service.close();
+  }
+});
+
+test("future one-shot target keeps the plugin installed and active", async () => {
+  const h = await applicationFixture([
+    registration(manifest("future.bridge", { retireAfterHostVersion: "999.0.0" })),
+  ]);
+  try {
+    assert.equal(h.service.summaries()[0].running, true);
+  } finally {
+    await h.service.close();
+  }
+});

@@ -5,8 +5,8 @@ import { verifyRelease } from "../domain/releases.ts";
 import type { PluginSource } from "../domain/configuration.ts";
 import type { ReleaseSource } from "../domain/ports.ts";
 import { verifyHash } from "./archives.ts";
-import { githubSources } from "./github.ts";
-import { downloadFromSources } from "./downloads.ts";
+import { githubSources } from "../../../shared/github.ts";
+import { downloadFromSources } from "../../../shared/downloads.ts";
 
 export class SignedReleaseSource implements ReleaseSource {
   private readonly lifetime = new AbortController();

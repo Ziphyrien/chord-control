@@ -1,4 +1,10 @@
-import { test } from "vite-plus/test";
+import { test, vi } from "vite-plus/test";
+import {
+  registryText,
+  parseRelease,
+  needed,
+  prepare,
+} from "../plugins/upgrade-bridge/src/upgrade.ts";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -376,6 +382,54 @@ test("GitHub retries bounded transient failures and does not turn auth failures 
     fetcher: async () => new Response("no", { status: 403 }),
   });
   await assert.rejects(forbidden.getRelease("fixture"), /HTTP 403/);
+});
+
+test("legacy bridge waits for a host supporting retirement and only accepts official release URLs", () => {
+  const endpoint = "https://github.com/owner/project/releases/latest/download/latest.json";
+  const value = {
+    version: "0.4.2",
+    platforms: {
+      "windows-x86_64": {
+        url: "https://github.com/owner/project/releases/download/app-v0.4.2/Chord.Control-setup.exe",
+        signature: "fixture",
+      },
+    },
+  };
+  const release = parseRelease(Buffer.from(JSON.stringify(value)), endpoint);
+  assert.equal(needed("0.3.2", release), true);
+  assert.equal(needed("0.4.2", release), false);
+  assert.equal(needed("0.3.2", { ...release, version: "0.4.1" }), false);
+  value.platforms["windows-x86_64"].url = "https://example.test/install.exe";
+  assert.throws(() => parseRelease(Buffer.from(JSON.stringify(value)), endpoint), /官方发布/);
+  assert.equal(registryText({ type: 1, bytes: [...Buffer.from("0.3.2\0", "utf16le")] }), "0.3.2");
+  assert.throws(() => registryText({ type: 4, bytes: [1] }));
+});
+
+test("legacy bridge rejects corrupt mirror bytes and writes only a verified installer", async (t) => {
+  const directory = await temporary(t),
+    bytes = Buffer.from("MZverified installer");
+  const signed = updaterFixture(bytes);
+  const config = { endpoints: [], pubkey: signed.publicKey };
+  const release = {
+    version: "0.4.2",
+    signature: signed.signature,
+    url: "https://github.com/owner/project/releases/download/app-v0.4.2/Chord.Control-setup.exe",
+  };
+  vi.stubGlobal(
+    "fetch",
+    async (url) =>
+      new Response(String(url).startsWith("https://github.com/") ? "MZcorrupt" : bytes),
+  );
+  t.onTestFinished(() => vi.unstubAllGlobals());
+  const installer = await prepare(release, config, directory, new AbortController().signal);
+  assert.deepEqual(await readFile(installer), bytes);
+  await rm(installer);
+  vi.stubGlobal("fetch", async () => new Response("MZcorrupt"));
+  await assert.rejects(
+    prepare(release, config, directory, new AbortController().signal),
+    /verification failed/,
+  );
+  await assert.rejects(readFile(installer), /ENOENT/);
 });
 
 function updaterFixture(bytes) {

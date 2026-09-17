@@ -115,6 +115,9 @@ export async function applicationFixture(plugins = []) {
     },
     async write() {},
     async validate() {},
+    async purge(release) {
+      calls.push(`purge:${release.id}`);
+    },
   };
   const gate = serialQueue();
   const service = new PluginService({

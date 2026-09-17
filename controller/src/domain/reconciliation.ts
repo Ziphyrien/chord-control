@@ -2,7 +2,7 @@ import { dependencyGraph, dependentClosure } from "../../../shared/dependencies.
 import type { PluginCatalog, PluginManifest, PluginSummary } from "../../../shared/protocol.ts";
 import type { Configuration, Registration } from "./configuration.ts";
 import { catalogSource, sourceKey } from "./configuration.ts";
-import { hasUpdate } from "./releases.ts";
+import { completed, hasUpdate } from "./releases.ts";
 
 export function installedGraph(config: Configuration, enabledOnly = false) {
   return dependencyGraph(
@@ -51,6 +51,7 @@ export function reconcileCatalog(
     item.sourceStatus = item.available ? "available" : "missing";
   }
   for (const manifest of catalog.plugins) {
+    if (completed(manifest)) continue;
     if (next.plugins.some((item) => item.id.toLowerCase() === manifest.id.toLowerCase())) continue;
     if (
       next.suppressed.some(

@@ -29,7 +29,10 @@ export class ConfigStore implements ConfigRepository {
       await this.commit(emptyConfiguration());
       return;
     }
-    this.state = readConfiguration(JSON.parse(content.replace(/^\uFEFF/, "")), this.allowUnsigned);
+    const input: unknown = JSON.parse(content.replace(/^\uFEFF/, ""));
+    const next = readConfiguration(input, this.allowUnsigned);
+    if (object(input) && input.format !== next.format) await this.commit(next);
+    else this.state = next;
   }
   async commit(next: Configuration): Promise<void> {
     // State becomes visible only after its durable replacement succeeds.

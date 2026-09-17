@@ -90,6 +90,16 @@ export function assertManifest(value: unknown): asserts value is PluginManifest 
     if (value[key] !== undefined)
       text(value[key], `manifest.${key}`, key === "description" ? 4000 : 512, true);
   if (value.minHostVersion !== undefined) version(value.minHostVersion);
+  if (value.retireAfterHostVersion !== undefined) {
+    version(value.retireAfterHostVersion);
+    if (
+      (object(value.services) &&
+        Array.isArray(value.services.provides) &&
+        value.services.provides.length) ||
+      (Array.isArray(value.hooks) && value.hooks.length)
+    )
+      throw new Error("一次性插件不能提供持久服务或策略");
+  }
   if (value.permissions !== undefined) strings(value.permissions, "permissions");
   if (value.hooks !== undefined) strings(value.hooks, "hooks", 50);
   if (value.services !== undefined) {

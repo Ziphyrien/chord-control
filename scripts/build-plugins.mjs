@@ -56,6 +56,11 @@ async function compilePlugin({ directory, bundleDir, scratch, pkg }) {
     target: "node26",
     minify: true,
     legalComments: "none",
+    define: {
+      __CHORD_APP_UPDATER__: JSON.stringify(
+        (await readJson(join(repositoryRoot, "src-tauri/tauri.conf.json"))).plugins.updater,
+      ),
+    },
   });
   const entry = join(scratch, "entry.mjs");
   await writeFile(entry, result.outputFiles[0].contents);
@@ -138,7 +143,7 @@ export async function buildPlugin({
         ...(control.ui ? { ui: "ui.html" } : {}),
         permissions: control.permissions ?? [],
         ...Object.fromEntries(
-          ["services", "hooks", "icon", "color"]
+          ["services", "hooks", "icon", "color", "retireAfterHostVersion"]
             .filter((key) => control[key] !== undefined)
             .map((key) => [key, control[key]]),
         ),

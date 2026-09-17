@@ -1,0 +1,22 @@
+{
+  "name": "com.chord.upgrade-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "将旧版 Chord Control 升级到最新版本，完成后自动移除",
+  "type": "module",
+  "control": {
+    "name": "主程序升级助手",
+    "minHostVersion": "0.3.2",
+    "retireAfterHostVersion": "0.4.2",
+    "permissions": [
+      "filesystem",
+      "registry-current-user",
+      "process-control",
+      "network"
+    ],
+    "services": {
+      "provides": [],
+      "requires": []
+    }
+  }
+}

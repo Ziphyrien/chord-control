@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import appIcon from "../../resources/icon.svg?url";
+  import { HOST_VERSION } from "../../shared/versions.ts";
   import { defaultSettings } from "../../shared/protocol.ts";
   import type { ControllerSession } from "../lib/session.ts";
   import { SessionView } from "../lib/session.svelte.ts";
@@ -61,9 +62,12 @@
         >
       {/each}
     </nav>
-    {#if model.connection === "offline"}
-      <div class="connection" role="status">断开连接</div>
-    {/if}
+    <footer class="sidebar-footer">
+      {#if model.connection === "offline"}
+        <div class="connection" role="status">断开连接</div>
+      {/if}
+      <span class="app-version" aria-label="主程序版本">v{HOST_VERSION}</span>
+    </footer>
   </aside>
   <main id="content" tabindex="-1">
     {#if model.connection !== "online"}
