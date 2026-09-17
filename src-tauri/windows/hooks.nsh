@@ -23,7 +23,7 @@
   Pop $0
   ${If} $0 = 0
     SetErrorLevel 1
-    Abort "The plugin controller is still running. Close Chord Control and retry."
+    Abort "Chord Control is still shutting down. Please retry."
   ${EndIf}
 !macroend
 
@@ -35,18 +35,18 @@
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Chord Control" '$"$INSTDIR\${MAINBINARYNAME}.exe$" --background'
     ${If} ${Errors}
       SetErrorLevel 1
-      Abort "Could not register current-user startup."
+      Abort "Could not enable automatic startup. Please retry."
     ${EndIf}
     FileOpen $0 "$LOCALAPPDATA\ChordControl\first-run-complete" w
     ${If} ${Errors}
       SetErrorLevel 1
-      Abort "Could not save the first-run marker."
+      Abort "Could not save startup settings. Check folder permissions and retry."
     ${EndIf}
     FileWrite $0 "1"
     FileClose $0
     ${If} ${Errors}
       SetErrorLevel 1
-      Abort "Could not save the first-run marker."
+      Abort "Could not save startup settings. Check folder permissions and retry."
     ${EndIf}
   ${EndIf}
 !macroend

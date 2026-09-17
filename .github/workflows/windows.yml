@@ -37,6 +37,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.2
         with:
           workspaces: src-tauri
+          cache-on-failure: true
       - run: bun install --frozen-lockfile --ignore-scripts
       - name: Build Windows installer
         if: ${{ !startsWith(github.ref, 'refs/tags/app-v') }}
