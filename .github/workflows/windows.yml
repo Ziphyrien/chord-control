@@ -45,6 +45,11 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+      - name: Exercise silent installation and update
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          ./scripts/probe-silent-install.ps1 -Installer $installer.FullName
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: chord-control-windows-x64

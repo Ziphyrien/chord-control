@@ -1,18 +1,33 @@
-import type { ControllerCommand, ControllerSettings } from "./protocol.ts";
+import { defaultSettings, type ControllerCommand, type ControllerSettings } from "./protocol.ts";
 import { jsonValue, object, strings, text } from "./validation.ts";
 
 export function parseSettings(value: unknown): ControllerSettings {
+  const defaults = defaultSettings();
+  const appInterval =
+    object(value) && value.appCheckIntervalMinutes !== undefined
+      ? value.appCheckIntervalMinutes
+      : defaults.appCheckIntervalMinutes;
+  const appAutoUpdate =
+    object(value) && value.appAutoUpdate !== undefined
+      ? value.appAutoUpdate
+      : defaults.appAutoUpdate;
   if (
     !object(value) ||
     typeof value.autoUpdate !== "boolean" ||
     !Number.isInteger(value.checkIntervalMinutes) ||
     Number(value.checkIntervalMinutes) < 1 ||
-    Number(value.checkIntervalMinutes) > 1440
+    Number(value.checkIntervalMinutes) > 1440 ||
+    !Number.isInteger(appInterval) ||
+    Number(appInterval) < 1 ||
+    Number(appInterval) > 1440 ||
+    typeof appAutoUpdate !== "boolean"
   )
     throw new Error("检查间隔必须为 1–1440 分钟，自动更新必须为布尔值");
   return {
     checkIntervalMinutes: Number(value.checkIntervalMinutes),
     autoUpdate: value.autoUpdate,
+    appCheckIntervalMinutes: Number(appInterval),
+    appAutoUpdate,
     catalogUrl: text(value.catalogUrl, "目录地址", 4096, true).trim(),
     catalogPublicKey: text(value.catalogPublicKey, "发布者公钥", 4096, true).trim(),
   };

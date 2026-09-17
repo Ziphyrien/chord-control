@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Chord Control",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "identifier": "com.chord.control",
   "build": {
     "beforeDevCommand": "vp run build:sidecar && vp dev",
@@ -38,7 +38,7 @@
         "https://github.com/Ziphyrien/chord-control/releases/latest/download/latest.json"
       ],
       "windows": {
-        "installMode": "passive"
+        "installMode": "quiet"
       }
     }
   },

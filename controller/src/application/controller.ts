@@ -25,6 +25,8 @@ export class ControllerApplication {
   private readonly startedAt = new Date().toISOString();
   private timer?: ReturnType<typeof setTimeout>;
   private stopped = false;
+  private failures = 0;
+  private checking?: Promise<{ failures: number }>;
   constructor(options: Dependencies) {
     this.options = options;
   }
@@ -86,11 +88,12 @@ export class ControllerApplication {
       case "plugin_window_closed":
         return gate(() => runtime.call(command.pluginId, "window_closed", null));
       case "check_updates":
-        return plugins.checkUpdates(validate);
+        return this.checkUpdates(validate);
       case "set_settings":
         await plugins.updateSettings(command.settings, validate);
-        this.schedule();
-        return plugins.checkUpdates();
+        this.failures = 0;
+        this.publish();
+        return this.checkUpdates();
       case "add_plugin":
         await plugins.add(command.manifestUrl, command.publicKey, validate);
         return null;
@@ -116,19 +119,49 @@ export class ControllerApplication {
   }
   private schedule(): void {
     clearTimeout(this.timer);
-    if (!this.stopped)
-      this.timer = setTimeout(() => {
-        void this.poll();
-      }, this.options.plugins.settings.checkIntervalMinutes * 60_000);
+    if (!this.stopped && !this.checking)
+      this.timer = setTimeout(
+        () => {
+          void this.poll();
+        },
+        Math.min(
+          this.options.plugins.settings.checkIntervalMinutes * 60_000 * 2 ** this.failures,
+          Math.max(this.options.plugins.settings.checkIntervalMinutes * 60_000, 60 * 60_000),
+        ),
+      );
+  }
+  private checkUpdates(validate: () => void = () => {}): Promise<{ failures: number }> {
+    validate();
+    if (this.checking)
+      return this.checking.then((result) => {
+        validate();
+        return result;
+      });
+    clearTimeout(this.timer);
+    this.checking = this.options.plugins
+      .checkUpdates(validate)
+      .then(
+        (result) => {
+          this.failures = result.failures ? Math.min(this.failures + 1, 6) : 0;
+          return result;
+        },
+        (error: unknown) => {
+          this.failures = Math.min(this.failures + 1, 6);
+          throw error;
+        },
+      )
+      .finally(() => {
+        this.checking = undefined;
+        this.schedule();
+      });
+    return this.checking;
   }
   private async poll(): Promise<void> {
     try {
-      await this.options.plugins.checkUpdates();
+      await this.checkUpdates();
       this.publish();
     } catch (error) {
       if (!this.stopped) this.report(error);
-    } finally {
-      this.schedule();
     }
   }
   stop(): void {

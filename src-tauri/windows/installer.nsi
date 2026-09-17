@@ -112,7 +112,11 @@ Section "WebView2 runtime"
     ${EndIf}
     InitPluginsDir
     !if "${WEBVIEWMODE}" == "downloadBootstrapper"
-      NSISdl::download /TIMEOUT=90000 "https://go.microsoft.com/fwlink/p/?LinkId=2124703" "$PLUGINSDIR\WebViewSetup.exe"
+      ${If} ${Silent}
+        NSISdl::download_quiet /TIMEOUT=90000 "https://go.microsoft.com/fwlink/p/?LinkId=2124703" "$PLUGINSDIR\WebViewSetup.exe"
+      ${Else}
+        NSISdl::download /TIMEOUT=90000 "https://go.microsoft.com/fwlink/p/?LinkId=2124703" "$PLUGINSDIR\WebViewSetup.exe"
+      ${EndIf}
       Pop $0
       ${If} $0 != "success"
         SetErrorLevel 1
@@ -126,7 +130,11 @@ Section "WebView2 runtime"
       !error "Unsupported WebView2 installation mode"
     !endif
     ; Never invoke a machine updater or request elevation. This child inherits our user token.
-    nsExec::ExecToStack /TIMEOUT=180000 '"$PLUGINSDIR\WebViewSetup.exe" ${WEBVIEWARGS} /install'
+    ${If} ${Silent}
+      nsExec::ExecToStack /TIMEOUT=180000 '"$PLUGINSDIR\WebViewSetup.exe" /silent /install'
+    ${Else}
+      nsExec::ExecToStack /TIMEOUT=180000 '"$PLUGINSDIR\WebViewSetup.exe" ${WEBVIEWARGS} /install'
+    ${EndIf}
     Pop $0
     Pop $1
     ${If} $0 != "0"

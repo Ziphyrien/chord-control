@@ -31,6 +31,8 @@ export interface PluginCatalog {
 export interface ControllerSettings {
   checkIntervalMinutes: number;
   autoUpdate: boolean;
+  appCheckIntervalMinutes: number;
+  appAutoUpdate: boolean;
   catalogUrl: string;
   catalogPublicKey: string;
 }
@@ -92,8 +94,10 @@ export type ControllerEvent =
   | { type: "disconnected"; message: string };
 export function defaultSettings(): ControllerSettings {
   return {
-    checkIntervalMinutes: 30,
+    checkIntervalMinutes: 5,
     autoUpdate: true,
+    appCheckIntervalMinutes: 5,
+    appAutoUpdate: true,
     catalogUrl: defaultCatalogUrl,
     catalogPublicKey: defaultCatalogPublicKey,
   };

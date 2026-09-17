@@ -49,7 +49,14 @@ function snapshot(): ControllerSnapshot {
     checkedAt: null,
     startedAt: "2026-01-01T00:00:00Z",
     controllerVersion: "test",
-    settings: { checkIntervalMinutes: 30, autoUpdate: true, catalogUrl: "", catalogPublicKey: "" },
+    settings: {
+      checkIntervalMinutes: 30,
+      autoUpdate: true,
+      appCheckIntervalMinutes: 5,
+      appAutoUpdate: true,
+      catalogUrl: "",
+      catalogPublicKey: "",
+    },
     dataDir: "D:/Chord/data",
   };
 }
@@ -330,19 +337,30 @@ test("settings draft survives snapshots and independent desktop operations", asy
     return { result: null, snapshot: value };
   });
   await page.getByRole("navigation").getByRole("button", { name: "设置", exact: true }).click();
-  await page.getByLabel("检查间隔（分钟）").fill("15");
+  await page.getByLabel("检查间隔（分钟）", { exact: true }).fill("15");
+  await page.getByLabel("主程序检查间隔（分钟）", { exact: true }).fill("7");
+  await page.getByRole("checkbox", { name: "自动安装主程序更新" }).uncheck();
   await page.evaluate(
     (value) => window.testBridge.emit({ type: "snapshot", snapshot: value }),
     value,
   );
-  await expect(page.getByLabel("检查间隔（分钟）")).toHaveValue("15");
+  await expect(page.getByLabel("检查间隔（分钟）", { exact: true })).toHaveValue("15");
   await page.getByRole("button", { name: "保存设置", exact: true }).click();
   await page.getByRole("switch", { name: "登录时自动启动" }).check();
   await expect(page.getByRole("switch")).toBeChecked();
   await expect(page.getByRole("button", { name: "保存中…", exact: true })).toBeDisabled();
   saving.resolve({ result: null, snapshot: value });
   await expect(page.getByRole("status")).toHaveText("设置已保存");
-  expect(h.commands.filter((item) => item.type === "set_settings")).toHaveLength(1);
+  const saved = h.commands.filter((item) => item.type === "set_settings");
+  expect(saved).toHaveLength(1);
+  expect(saved[0]).toMatchObject({
+    settings: {
+      checkIntervalMinutes: 15,
+      autoUpdate: true,
+      appCheckIntervalMinutes: 7,
+      appAutoUpdate: false,
+    },
+  });
 });
 
 test("search, source states, blocked reason and narrow layout remain readable", async ({
@@ -504,9 +522,9 @@ test("settings undo is not a submit and failed explicit enable does not start pr
   expect(enable).toHaveLength(1);
   expect(enable[0]).toMatchObject({ pluginId: "notes", enabled: true });
   await page.getByRole("navigation").getByRole("button", { name: "设置", exact: true }).click();
-  await page.getByLabel("检查间隔（分钟）").fill("17");
+  await page.getByLabel("检查间隔（分钟）", { exact: true }).fill("17");
   await page.getByRole("button", { name: "撤销更改" }).click();
-  await expect(page.getByLabel("检查间隔（分钟）")).toHaveValue("30");
+  await expect(page.getByLabel("检查间隔（分钟）", { exact: true })).toHaveValue("30");
   expect(h.commands.filter((command) => command.type === "set_settings")).toHaveLength(0);
   expect(h.errors).toEqual([]);
 });

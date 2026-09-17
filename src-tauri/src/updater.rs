@@ -1,5 +1,7 @@
 //! Signed host updates. Downloads finish before peers or plugins are stopped.
+mod policy;
 use crate::sync::lock;
+use policy::Policy;
 use serde_json::{json, Value};
 use std::{
     fs,
@@ -18,11 +20,34 @@ pub(crate) struct UpdateState {
     busy: AtomicBool,
     staging_failed: AtomicBool,
     progress: Mutex<Progress>,
+    policy: Mutex<Option<Policy>>,
+    wake: tokio::sync::Notify,
 }
 #[derive(Default)]
 struct Progress {
     version: Option<String>,
     error: Option<String>,
+    failures: u32,
+}
+pub(crate) fn configure(app: &AppHandle, settings: &Value) {
+    let (Some(interval), Some(auto_install)) = (
+        settings["appCheckIntervalMinutes"].as_u64(),
+        settings["appAutoUpdate"].as_bool(),
+    ) else {
+        return;
+    };
+    let Some(policy) = Policy::new(interval, auto_install) else {
+        return;
+    };
+    let state = app.state::<UpdateState>();
+    let mut current = lock(&state.policy);
+    if *current != Some(policy) {
+        *current = Some(policy);
+        state.wake.notify_one();
+    }
+}
+fn automatic_install_enabled(app: &AppHandle) -> bool {
+    lock(&app.state::<UpdateState>().policy).is_some_and(|policy| policy.auto_install)
 }
 pub(crate) fn status(app: &AppHandle) -> Value {
     let state = app.state::<UpdateState>();
@@ -78,7 +103,7 @@ fn launch_installer(path: &std::path::Path) -> Result<(), String> {
     // hidden session after replacement; original process arguments are never replayed.
     let mut command = std::process::Command::new(path);
     command
-        .args(["/P", "/UPDATE"])
+        .args(["/S", "/UPDATE"])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
@@ -89,7 +114,12 @@ fn launch_installer(path: &std::path::Path) -> Result<(), String> {
     }
     command.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
-async fn check(app: &AppHandle, install: bool, require_unlock: bool) -> Result<(), String> {
+async fn check(
+    app: &AppHandle,
+    install: bool,
+    require_unlock: bool,
+    automatic: bool,
+) -> Result<(), String> {
     let updater = app
         .updater_builder()
         .timeout(Duration::from_secs(90))
@@ -109,7 +139,7 @@ async fn check(app: &AppHandle, install: bool, require_unlock: bool) -> Result<(
         return Ok(());
     };
     lock(&app.state::<UpdateState>().progress).version = Some(update.version.clone());
-    if !install {
+    if !install || (automatic && !automatic_install_enabled(app)) {
         if let Some(tray) = app.tray_by_id("controller") {
             let _ = tray.set_tooltip(Some(format!(
                 "Chord Control — 主程序 {} 可更新，解锁后从托盘安装",
@@ -123,6 +153,9 @@ async fn check(app: &AppHandle, install: bool, require_unlock: bool) -> Result<(
         .await
         .map_err(|_| "下载更新超时".to_owned())?
         .map_err(|e| e.to_string())?;
+    if automatic && !automatic_install_enabled(app) {
+        return Ok(());
+    }
     if !crate::lifecycle::is_running(app)
         || (require_unlock && !app.state::<crate::desktop::DesktopState>().is_unlocked())
     {
@@ -140,6 +173,10 @@ async fn check(app: &AppHandle, install: bool, require_unlock: bool) -> Result<(
             return Err("写入更新超时，请重新启动主程序后重试".into());
         }
     };
+    if automatic && !automatic_install_enabled(app) {
+        let _ = fs::remove_file(&path);
+        return Ok(());
+    }
     if !crate::lifecycle::is_running(app)
         || (require_unlock && !app.state::<crate::desktop::DesktopState>().is_unlocked())
     {
@@ -148,6 +185,10 @@ async fn check(app: &AppHandle, install: bool, require_unlock: bool) -> Result<(
     }
     let handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        if automatic && !automatic_install_enabled(&handle) {
+            let _ = fs::remove_file(&path);
+            return Ok(());
+        }
         let result =
             crate::lifecycle::prepare_update(&handle).and_then(|()| launch_installer(&path));
         match result {
@@ -163,7 +204,7 @@ async fn check(app: &AppHandle, install: bool, require_unlock: bool) -> Result<(
     .await
     .map_err(|e| e.to_string())?
 }
-fn run(app: &AppHandle, install: bool, require_unlock: bool) -> Result<bool, String> {
+fn begin(app: &AppHandle) -> Result<bool, String> {
     let state = app.state::<UpdateState>();
     if !crate::lifecycle::is_running(app) || state.staging_failed.load(Ordering::Acquire) {
         return Err("更新不可用，请重新启动主程序后重试".into());
@@ -172,16 +213,35 @@ fn run(app: &AppHandle, install: bool, require_unlock: bool) -> Result<bool, Str
         return Ok(false);
     }
     lock(&state.progress).error = None;
+    Ok(true)
+}
+async fn finish(app: &AppHandle, install: bool, require_unlock: bool, automatic: bool) {
+    let result = check(app, install, require_unlock, automatic).await;
+    let state = app.state::<UpdateState>();
+    {
+        let mut progress = lock(&state.progress);
+        if let Err(error) = &result {
+            progress.error = Some(error.clone());
+            progress.failures = progress.failures.saturating_add(1);
+        } else {
+            progress.failures = 0;
+        }
+    }
+    if let Err(error) = result {
+        crate::desktop::report(app, &format!("主程序更新: {error}"));
+    }
+    state.busy.store(false, Ordering::Release);
+    if !automatic {
+        state.wake.notify_one();
+    }
+}
+fn run(app: &AppHandle, install: bool, require_unlock: bool) -> Result<bool, String> {
+    if !begin(app)? {
+        return Ok(false);
+    }
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = check(&handle, install, require_unlock).await {
-            lock(&handle.state::<UpdateState>().progress).error = Some(error.clone());
-            crate::desktop::report(&handle, &format!("主程序更新: {error}"));
-        }
-        handle
-            .state::<UpdateState>()
-            .busy
-            .store(false, Ordering::Release);
+        finish(&handle, install, require_unlock, false).await;
     });
     Ok(true)
 }
@@ -202,9 +262,28 @@ pub(crate) fn start(app: &AppHandle) {
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(60)).await;
+        let state = handle.state::<UpdateState>();
+        let mut first_check = true;
         while crate::lifecycle::is_running(&handle) {
-            let _ = run(&handle, false, false);
-            tokio::time::sleep(Duration::from_secs(6 * 60 * 60)).await;
+            let policy = *lock(&state.policy);
+            if let Some(policy) = policy {
+                if !first_check {
+                    let failures = lock(&state.progress).failures;
+                    if tokio::time::timeout(policy.delay(failures), state.wake.notified())
+                        .await
+                        .is_ok()
+                    {
+                        // Settings and manual checks reset the delay, never trigger a check.
+                        continue;
+                    }
+                }
+                first_check = false;
+                if begin(&handle).unwrap_or(false) {
+                    finish(&handle, policy.auto_install, false, true).await;
+                }
+            } else {
+                let _ = tokio::time::timeout(Duration::from_secs(30), state.wake.notified()).await;
+            }
         }
     });
 }

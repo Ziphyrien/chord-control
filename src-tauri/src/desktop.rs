@@ -141,6 +141,10 @@ pub(crate) fn handle_event(
     if !crate::lifecycle::is_running(app) {
         return;
     }
+    if value["type"] == "snapshot" {
+        crate::updater::configure(app, &value["snapshot"]["settings"]);
+        return;
+    }
     if value["type"] == "plugin_window" {
         crate::plugin_windows::handle(app, value, generation);
         return;

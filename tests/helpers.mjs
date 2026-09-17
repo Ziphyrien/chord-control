@@ -46,8 +46,7 @@ export async function applicationFixture(plugins = []) {
   let state = {
     ...emptyConfiguration(),
     settings: {
-      checkIntervalMinutes: 30,
-      autoUpdate: true,
+      ...emptyConfiguration().settings,
       catalogUrl: "https://example.test/catalog.json",
       catalogPublicKey: "",
     },

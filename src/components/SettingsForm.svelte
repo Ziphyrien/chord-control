@@ -77,6 +77,40 @@
     }}
     aria-busy={saving}
   >
+    <section class="settings-section" aria-labelledby="app-update-title">
+      <h2 id="app-update-title">主程序更新</h2>
+      <fieldset disabled={!available}>
+        <label class="field"
+          >主程序检查间隔（分钟）<input
+            type="number"
+            min="1"
+            max="1440"
+            step="1"
+            required
+            value={draft.appCheckIntervalMinutes}
+            oninput={(event) =>
+              update({ appCheckIntervalMinutes: Number(event.currentTarget.value) })}
+          /></label
+        >
+        <div class="checkbox">
+          <Checkbox.Root
+            id="app-auto-update"
+            class="checkbox-control"
+            bind:checked={() => draft.appAutoUpdate, (appAutoUpdate) => update({ appAutoUpdate })}
+            disabled={!available}
+          >
+            {#snippet children({ checked })}
+              {#if checked}
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <path d="m3 8 3 3 7-7" fill="none" stroke="currentColor" stroke-width="2" />
+                </svg>
+              {/if}
+            {/snippet}
+          </Checkbox.Root>
+          <label for="app-auto-update">自动安装主程序更新</label>
+        </div>
+      </fieldset>
+    </section>
     <section class="settings-section" aria-labelledby="update-title">
       <h2 id="update-title">插件更新</h2>
       <fieldset disabled={!available}>

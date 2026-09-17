@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { defaultSettings } from "../shared/protocol.ts";
+import { parseSettings } from "../shared/commands.ts";
 import { readConfiguration } from "../controller/src/domain/configuration.ts";
 import { ConfigStore } from "../controller/src/infrastructure/config-store.ts";
 import { manifest, publisher, signed } from "./helpers.mjs";
@@ -39,6 +41,32 @@ test("v0.2 configuration migrates installed and paused plugins, publisher pin an
     { id: "com.removed", source: migrated.plugins[0].source },
   ]);
   assert.deepEqual(readConfiguration(migrated), migrated);
+});
+test("five-minute defaults and old settings preserve user choices independently", () => {
+  const defaults = defaultSettings();
+  assert.equal(defaults.checkIntervalMinutes, 5);
+  assert.equal(defaults.appCheckIntervalMinutes, 5);
+  assert.equal(defaults.autoUpdate, true);
+  assert.equal(defaults.appAutoUpdate, true);
+  const legacy = {
+    checkIntervalMinutes: 12,
+    autoUpdate: false,
+    catalogUrl: "",
+    catalogPublicKey: "",
+  };
+  const migrated = readConfiguration({ format: 2, settings: legacy, plugins: [], suppressed: [] });
+  assert.deepEqual(migrated.settings, {
+    ...legacy,
+    appCheckIntervalMinutes: 5,
+    appAutoUpdate: true,
+  });
+  const custom = { ...migrated.settings, appCheckIntervalMinutes: 1440, appAutoUpdate: false };
+  assert.deepEqual(readConfiguration({ ...migrated, settings: custom }).settings, custom);
+  assert.equal(readConfiguration({ plugins: [] }).settings.checkIntervalMinutes, 5);
+  for (const value of [0, 1441, 1.5, null, "5"])
+    assert.throws(() => parseSettings({ ...custom, appCheckIntervalMinutes: value }));
+  for (const value of [null, "false", 0])
+    assert.throws(() => parseSettings({ ...custom, appAutoUpdate: value }));
 });
 test("corrupt and unsupported configuration is never silently overwritten", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "chord-config-"));

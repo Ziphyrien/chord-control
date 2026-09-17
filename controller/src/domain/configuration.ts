@@ -77,7 +77,7 @@ export function readConfiguration(input: unknown, allowUnsigned = false): Config
   const settings = settingsFrom(
     input.settings ?? {
       ...defaultSettings(),
-      checkIntervalMinutes: input.checkIntervalMinutes ?? 30,
+      checkIntervalMinutes: input.checkIntervalMinutes ?? defaultSettings().checkIntervalMinutes,
       autoUpdate: input.autoUpdate !== false,
     },
     allowUnsigned,

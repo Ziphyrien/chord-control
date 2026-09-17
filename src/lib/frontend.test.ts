@@ -53,7 +53,14 @@ function snapshot(): ControllerSnapshot {
     startedAt: "2026-01-01T00:00:00Z",
     controllerVersion: "test",
     dataDir: "test-data",
-    settings: { checkIntervalMinutes: 30, autoUpdate: true, catalogUrl: "", catalogPublicKey: "" },
+    settings: {
+      checkIntervalMinutes: 30,
+      autoUpdate: true,
+      appCheckIntervalMinutes: 5,
+      appAutoUpdate: true,
+      catalogUrl: "",
+      catalogPublicKey: "",
+    },
   };
 }
 function deferred<T>() {
