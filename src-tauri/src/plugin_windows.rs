@@ -103,6 +103,7 @@ fn present(app: &AppHandle, request: &Presentation, generation: Generation) -> R
     let origin = url.origin();
     WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url.clone()))
         .title(title)
+        .theme(Some(tauri::Theme::Dark))
         .inner_size(440.0, 560.0)
         .resizable(false)
         .center()

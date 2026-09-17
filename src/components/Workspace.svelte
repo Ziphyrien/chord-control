@@ -61,14 +61,9 @@
         >
       {/each}
     </nav>
-    <div class="connection" role="status">
-      <span class={["connection-dot", model.connection]} aria-hidden="true"
-      ></span>{model.connection === "online"
-        ? "已连接"
-        : model.connection === "loading"
-          ? "正在连接"
-          : "已离线"}
-    </div>
+    {#if model.connection === "offline"}
+      <div class="connection" role="status">断开连接</div>
+    {/if}
   </aside>
   <main id="content" tabindex="-1">
     {#if model.connection !== "online"}

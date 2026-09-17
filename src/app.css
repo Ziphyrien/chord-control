@@ -20,14 +20,12 @@ body {
 }
 button,
 input,
-textarea,
-select {
+textarea {
   font: inherit;
 }
 button,
 input,
-textarea,
-select {
+textarea {
   border: 1px solid var(--line);
   border-radius: 7px;
 }
@@ -67,8 +65,7 @@ button.danger {
   outline-offset: 3px;
 }
 input,
-textarea,
-select {
+textarea {
   padding: 10px 12px;
   background: #17191b;
   color: inherit;
@@ -208,25 +205,10 @@ nav {
   color: #d6e9cc;
 }
 .connection {
-  display: flex;
-  gap: 8px;
-  align-items: center;
   margin-top: auto;
   padding: 0 12px;
-  color: var(--muted);
+  color: var(--danger);
   font-size: 12px;
-}
-.connection-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #929c95;
-}
-.connection-dot.online {
-  background: var(--accent);
-}
-.connection-dot.loading {
-  background: #d8c18a;
 }
 main {
   min-width: 0;
@@ -389,6 +371,40 @@ main {
 .footnote {
   margin-top: 22px;
   font-size: 12px;
+}
+.activity-filter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 148px;
+  white-space: nowrap;
+}
+.activity-filter-menu {
+  z-index: 20;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0005;
+}
+.activity-filter-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+}
+.activity-filter-option[data-highlighted] {
+  background: #29362b;
+}
+.activity-filter-check {
+  width: 16px;
+  color: var(--accent);
 }
 .activity-list {
   list-style: none;
