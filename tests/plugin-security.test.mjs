@@ -1,111 +1,96 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { basename, join, resolve } from "node:path";
-import { readFile } from "node:fs/promises";
-import { buildPlugin } from "../scripts/build-plugins.mjs";
-import { createHarness } from "./helpers.mjs";
+import { resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { passwordFor } from "../plugins/password-pad/src/board.ts";
+import { createTransportHarness } from "./transport-harness.mjs";
 
-function passwordFor(date = new Date()) {
-  return `${date.getMonth() + 1 + date.getDate()}${["S", "M", "T", "W", "T", "F", "S"][date.getDay()]}`;
-}
-function findPath(cells, password, size = 6) {
-  const visit = (path) => {
-    if (path.length === password.length) return path;
-    const previous = path.at(-1);
-    for (let index = 0; index < cells.length; index++) {
-      if (path.includes(index) || cells[index] !== password[path.length]) continue;
-      if (
-        previous !== undefined &&
-        (Math.abs((previous % size) - (index % size)) > 1 ||
-          Math.abs(Math.floor(previous / size) - Math.floor(index / size)) > 1)
-      )
-        continue;
-      const result = visit([...path, index]);
-      if (result) return result;
-    }
-    return null;
-  };
-  return visit([]);
-}
-async function addBuilt(h, directory, path) {
-  const manifest = await buildPlugin({
-    directory: resolve(directory),
-    outdir: h.buildDir,
-    baseUrl: h.baseUrl,
-    privateKey: h.privateKey,
-  });
-  const artifact = await readFile(
-    join(h.buildDir, basename(new URL(manifest.artifactUrl).pathname)),
-  );
-  h.routes.set(new URL(manifest.artifactUrl).pathname, artifact);
-  h.routes.set(path, Buffer.from(JSON.stringify(manifest)));
-  await h.command({
-    type: "add_plugin",
-    manifestUrl: `${h.baseUrl}${path}`,
-    publicKey: h.publicPem,
-  });
-  return manifest;
-}
-async function waitForChallenge(h, pluginId) {
-  for (let attempt = 0; attempt < 40; attempt++) {
+const passwordId = "com.chord.password-pad",
+  guardId = "com.chord.app-guard";
+async function challenge(h) {
+  for (let attempt = 0; attempt < 100; attempt++) {
     const value = await h.command({
       type: "plugin_call",
-      pluginId,
+      pluginId: passwordId,
       method: "challenge",
       input: null,
     });
     if (value) return value;
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
+    await delay(10);
   }
-  throw new Error("密保盘挑战未出现");
+  throw new Error("password prompt did not appear");
 }
-
-test("generic Chord services bind late and protect desktop open", async () => {
-  process.env.CHORD_CONTROL_NATIVE_TEST = "1";
-  const h = await createHarness();
-  const passwordId = "com.chord.password-pad";
-  try {
-    await h.start();
-    await addBuilt(h, "plugins/app-guard", "/guard.json");
-    await assert.rejects(
-      h.command({ type: "desktop_action", action: "open" }),
-      /binding is closed|依赖服务未运行/,
+async function submit(h, view, input) {
+  const sequence = [...input].map((character) => view.cells.indexOf(character));
+  sequence.push(view.cells.indexOf("＃"));
+  assert(sequence.every((index) => index >= 0));
+  return h.command({
+    type: "plugin_call",
+    pluginId: passwordId,
+    method: "submit",
+    input: { id: view.id, revision: view.revision, sequence },
+  });
+}
+test(
+  "cloud-built guard and password facets authorize desktop actions with clicks, decoys, revision checks and closure",
+  {
+    skip: !process.env.CHORD_TEST_PLUGINS,
+    timeout: 40000,
+  },
+  async (t) => {
+    const h = await createTransportHarness(
+      process.env.CHORD_TEST_SEA ? { sea: resolve(process.env.CHORD_TEST_SEA) } : {},
     );
-    await addBuilt(h, "plugins/password-pad", "/password.json");
+    t.after(() => h.close());
+    await h.seed(resolve(process.env.CHORD_TEST_PLUGINS), [guardId, passwordId]);
+    await h.start();
+    assert(h.snapshot.plugins.every((item) => item.running));
+    assert.equal(
+      await h.command({
+        type: "plugin_call",
+        pluginId: passwordId,
+        method: "challenge",
+        input: null,
+      }),
+      null,
+      "startup must remain silent",
+    );
     const opening = h.command({ type: "desktop_action", action: "open" });
-    const challenge = await waitForChallenge(h, passwordId);
-    const wrongPath = findPath(challenge.cells, "0X") ?? [0];
-    const wrong = await h.command({
-      type: "plugin_call",
-      pluginId: passwordId,
-      method: "submit",
-      input: { id: challenge.id, path: wrongPath },
-    });
-    assert.equal(wrong.approved, false);
-    const fresh = await waitForChallenge(h, passwordId);
-    const path = findPath(fresh.cells, passwordFor());
-    assert(path, "daily password must be represented by adjacent cells");
-    const approved = await h.command({
-      type: "plugin_call",
-      pluginId: passwordId,
-      method: "submit",
-      input: { id: fresh.id, path },
-    });
-    assert.equal(approved.approved, true);
+    const first = await challenge(h);
+    assert.equal(first.cells.filter((cell) => cell === "＃").length, 1);
+    assert.equal((await submit(h, first, "")).approved, false);
+    const renewed = await challenge(h);
+    assert(renewed.revision > first.revision);
+    assert.equal(
+      (await submit(h, first, passwordFor(new Date()))).approved,
+      false,
+      "stale revision cannot authorize",
+    );
+    const decoy = renewed.cells.find((cell) => cell !== "＃");
+    assert.equal(
+      (await submit(h, renewed, `${decoy}${decoy}${passwordFor(new Date())}${decoy}`)).approved,
+      true,
+    );
     assert.equal(await opening, null);
-    const secondOpening = h.command({ type: "desktop_action", action: "open" });
-    const second = await waitForChallenge(h, passwordId);
-    const secondPath = findPath(second.cells, passwordFor());
-    assert(secondPath);
-    await h.command({
-      type: "plugin_call",
-      pluginId: passwordId,
-      method: "submit",
-      input: { id: second.id, path: secondPath },
-    });
-    assert.equal(await secondOpening, null);
-  } finally {
-    await h.close();
-    delete process.env.CHORD_CONTROL_NATIVE_TEST;
-  }
-});
+    assert.equal(
+      (await submit(h, renewed, passwordFor(new Date()))).approved,
+      false,
+      "resolved challenge cannot replay",
+    );
+    const rejected = assert.rejects(
+      h.command({ type: "desktop_action", action: "quit" }),
+      /未获允许/,
+    );
+    await challenge(h);
+    await h.command({ type: "plugin_window_closed", pluginId: passwordId });
+    await rejected;
+    await assert.rejects(
+      h.command({ type: "plugin_call", pluginId: passwordId, method: "practice", input: null }),
+      /无效/,
+    );
+    await assert.rejects(
+      h.command({ type: "plugin_call", pluginId: passwordId, method: "cancel", input: null }),
+      /无效/,
+    );
+  },
+);

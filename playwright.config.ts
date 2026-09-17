@@ -1,18 +1,29 @@
 import { defineConfig } from "@playwright/test";
+
+const externalUrl = process.env.CHORD_UI_URL?.trim();
+
+// Developer-only browser suite. CI performs static checks and cloud builds.
 export default defineConfig({
   testDir: "./tests",
   testMatch: "ui.spec.ts",
+  outputDir: "test-results",
   workers: 1,
-  timeout: 30000,
+  fullyParallel: false,
+  forbidOnly: Boolean(process.env.CI),
+  retries: 0,
+  timeout: 30_000,
   use: {
     browserName: "chromium",
+    baseURL: externalUrl ?? "http://127.0.0.1:1420",
     viewport: { width: 1280, height: 900 },
     trace: "retain-on-failure",
   },
-  webServer: {
-    command: "bun run dev",
-    url: "http://127.0.0.1:1420",
-    reuseExistingServer: !process.env.CI,
-    timeout: 30000,
-  },
+  webServer: externalUrl
+    ? undefined
+    : {
+        command: "bun run dev",
+        url: "http://127.0.0.1:1420",
+        reuseExistingServer: !process.env.CI,
+        timeout: 30_000,
+      },
 });

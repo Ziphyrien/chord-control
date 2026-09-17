@@ -1,15 +1,20 @@
-import { invoke } from "@tauri-apps/api/core";
-import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { isDesktop } from "./controller.ts";
+export interface DesktopAdapter {
+  readonly available: boolean;
+  autostart(): Promise<boolean>;
+  setAutostart(enabled: boolean): Promise<boolean>;
+  openDataDirectory(): Promise<void>;
+}
 
-export const desktop = {
-  available: isDesktop(),
-  autostart: isEnabled,
-  async setAutostart(enabled: boolean): Promise<boolean> {
-    await (enabled ? enable() : disable());
-    return isEnabled();
+/** Browser previews do not claim support for native preferences. */
+export const browserDesktop: DesktopAdapter = {
+  available: false,
+  async autostart() {
+    return false;
   },
-  async openDataDirectory(): Promise<void> {
-    await invoke("open_data_directory");
+  async setAutostart() {
+    throw new Error("当前无法更改启动设置");
+  },
+  async openDataDirectory() {
+    throw new Error("当前无法打开文件夹");
   },
 };

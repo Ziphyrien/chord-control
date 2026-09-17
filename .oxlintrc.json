@@ -2,5 +2,13 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "categories": {
     "correctness": "error"
-  }
+  },
+  "ignorePatterns": [
+    "build/**",
+    "dist/**",
+    "release/**",
+    ".local/**",
+    "src-tauri/target/**",
+    "src-tauri/gen/**"
+  ]
 }

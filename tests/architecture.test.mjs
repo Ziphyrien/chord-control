@@ -5,73 +5,110 @@ import { dirname, join, resolve, relative } from "node:path";
 import ts from "typescript";
 
 const root = resolve(import.meta.dirname, "..");
-async function collect(directory) {
-  const files = [];
+async function sources(directory) {
+  const found = [];
   for (const entry of await readdir(join(root, directory), { withFileTypes: true })) {
     const path = `${directory}/${entry.name}`;
-    if (entry.isDirectory()) files.push(...(await collect(path)));
-    else if (/\.(ts|mjs|svelte)$/.test(path)) files.push(path);
+    if (entry.isDirectory()) found.push(...(await sources(path)));
+    else if (/\.(ts|mjs|svelte)$/.test(path) && !path.endsWith(".test.ts")) found.push(path);
   }
-  return files;
+  return found;
 }
-
-test("module boundaries keep views, plugin execution and publishing independent", async () => {
+test("application boundaries exclude platform adapters, business plugins and dependency cycles", async () => {
   const files = (
-    await Promise.all(["src", "controller/src", "shared", "sdk", "scripts"].map(collect))
+    await Promise.all(["src", "controller/src", "shared", "sdk", "scripts", "plugins"].map(sources))
   ).flat();
-  const graph = new Map();
-  const violations = [];
+  const graph = new Map(),
+    violations = [];
   for (const path of files) {
-    const text = await readFile(join(root, path), "utf8");
-    const script = path.endsWith(".svelte")
-      ? [...text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)]
+    const content = await readFile(join(root, path), "utf8");
+    const code = path.endsWith(".svelte")
+      ? [...content.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)]
           .map((match) => match[1])
           .join("\n")
-      : text;
-    const ast = ts.createSourceFile(path, script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-    const dependencies = [];
-    for (const node of ast.statements) {
+      : content;
+    const ast = ts.createSourceFile(path, code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS),
+      dependencies = [];
+    const imports = [];
+    function scan(node) {
       if (
-        (!ts.isImportDeclaration(node) && !ts.isExportDeclaration(node)) ||
-        !node.moduleSpecifier ||
-        !ts.isStringLiteral(node.moduleSpecifier)
+        (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+        node.moduleSpecifier &&
+        ts.isStringLiteral(node.moduleSpecifier)
       )
-        continue;
-      const specifier = node.moduleSpecifier.text;
+        imports.push(node.moduleSpecifier.text);
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+        ts.isStringLiteral(node.arguments[0])
+      )
+        imports.push(node.arguments[0].text);
+      ts.forEachChild(node, scan);
+    }
+    scan(ast);
+    for (const specifier of imports) {
       const target = specifier.startsWith(".")
         ? relative(root, resolve(root, dirname(path), specifier)).replaceAll("\\", "/")
         : specifier;
       const local = files.find((file) => file === target || file === `${target}.ts`);
       if (local) dependencies.push(local);
-      if (
+      const forbid = (condition, reason) => {
+        if (condition) violations.push(`${path} -> ${target}: ${reason}`);
+      };
+      forbid(
+        path.startsWith("shared/") && /^(src|controller|sdk|plugins|scripts)\//.test(target),
+        "shared contracts cannot import applications",
+      );
+      forbid(
+        path.startsWith("sdk/") && /^(src|controller|plugins|scripts)\//.test(target),
+        "SDK cannot depend on consumers",
+      );
+      forbid(
+        path.startsWith("controller/src/domain/") &&
+          /^controller\/src\/(application|infrastructure|transport|runtime)\//.test(target),
+        "domain cannot depend on execution adapters",
+      );
+      forbid(
+        path.startsWith("controller/src/application/") &&
+          (/@earendil-works\/chord/.test(target) ||
+            /^controller\/src\/(infrastructure|runtime|transport)\//.test(target)),
+        "application uses ports",
+      );
+      forbid(
+        path.startsWith("controller/src/infrastructure/") &&
+          /^controller\/src\/(application|transport|runtime)\//.test(target),
+        "infrastructure cannot orchestrate the app",
+      );
+      forbid(
+        path.startsWith("controller/src/transport/") &&
+          /^controller\/src\/(application|runtime)\//.test(target),
+        "transports use narrow handlers and ports",
+      );
+      forbid(
         path.startsWith("src/components/") &&
-        !target.startsWith("svelte") &&
-        !target.startsWith("src/components/") &&
-        target !== "shared/protocol.ts"
-      )
-        violations.push(`${path} must receive adapters via callbacks: ${target}`);
-      if (path.startsWith("scripts/") && target.startsWith("controller/"))
-        violations.push(`${path} must use shared plugin format: ${target}`);
-      if (path.startsWith("shared/") && /^(src|controller|sdk)\//.test(target))
-        violations.push(`${path} depends on an application layer: ${target}`);
-      if (
-        path === "controller/src/ui-server.ts" &&
-        /controller\/src\/(runtime|plugin-manager|application|index)\.ts$/.test(target)
-      )
-        violations.push(`${path} must use the PluginUi port: ${target}`);
-      if (
-        path === "controller/src/runtime.ts" &&
-        /controller\/src\/(application|plugin-manager|ui-server|index)\.ts$/.test(target)
-      )
-        violations.push(`${path} depends on orchestration: ${target}`);
+          /^src\/lib\/(controller|desktop|native)\.ts$/.test(target),
+        "views receive desktop behavior from their session",
+      );
+      forbid(
+        path.startsWith("scripts/") && /^(src|controller|plugins)\//.test(target),
+        "publisher uses shared contracts",
+      );
+      forbid(
+        /^(controller|src)\//.test(path) && target.startsWith("plugins/"),
+        "host must not embed plugin business logic",
+      );
+      forbid(
+        path.startsWith("plugins/") && /^(src|controller|scripts)\//.test(target),
+        "plugins use SDK contracts",
+      );
     }
     graph.set(path, dependencies);
   }
   const visited = new Set();
-  function visit(path, ancestors = []) {
-    assert(!ancestors.includes(path), `Circular dependency: ${[...ancestors, path].join(" -> ")}`);
+  function visit(path, stack = []) {
+    assert(!stack.includes(path), `Circular dependency: ${[...stack, path].join(" -> ")}`);
     if (visited.has(path)) return;
-    for (const dependency of graph.get(path) ?? []) visit(dependency, [...ancestors, path]);
+    for (const next of graph.get(path) ?? []) visit(next, [...stack, path]);
     visited.add(path);
   }
   for (const path of files) visit(path);

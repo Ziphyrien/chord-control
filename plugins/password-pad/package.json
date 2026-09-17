@@ -1,18 +1,19 @@
 {
   "name": "com.chord.password-pad",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
-  "description": "使用今日密码的滑动密保盘",
+  "description": "每日密码单击输入，连续密码支持首尾虚位并以 ＃ 确认",
   "type": "module",
   "control": {
     "name": "密保盘",
-    "ui": "ui/index.html",
-    "uiScript": "ui/main.ts",
+    "minHostVersion": "0.2.0",
     "services": {
       "provides": [
         "study.password.v1"
       ],
       "requires": []
-    }
+    },
+    "ui": "ui/index.html",
+    "uiScript": "ui/main.ts"
   }
 }

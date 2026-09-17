@@ -1,7 +1,11 @@
-# Windows 桌面外壳
+# Windows 桌面程序
 
-`lib.rs` 装配 Tauri 插件、命令和窗口事件。`controller.rs` 管理 sidecar 与 IPC，`desktop.rs` 管理窗口、数据目录和登录启动，`tray.rs` 管理托盘菜单。
+应用安装、插件管理及问题处理见[使用说明](../README.md)。
 
-运行 `bun run tauri:dev` 或 `bun run build:windows` 时，Tauri hook 自动执行 `bun run build:sidecar`，把 Node SEA 生成到 `binaries/`。编译需要 MSVC C++ Build Tools 与 Windows SDK。
+维护命令：
 
-首次 NSIS 安装注册当前用户登录启动，升级保留用户设置；关闭主窗口隐藏到托盘，退出先通知控制器清理插件资源。卸载清理启动注册项并保留插件数据。
+```text
+chord-control.exe --maintenance-stop
+```
+
+正常退出使用系统托盘菜单。命令退出码为 0 后，可替换安装目录中的程序文件。

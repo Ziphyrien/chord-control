@@ -4,28 +4,29 @@
     ".": {
       "entry": [
         "src/main.ts",
-        "vite.config.ts",
-        "playwright.config.ts",
+        "src/**/*.test.ts",
         "controller/src/index.ts",
+        "sdk/**/*.ts",
+        "shared/**/*.ts",
         "scripts/*.mjs",
-        "tests/*.mjs",
-        "tests/browser.ts",
-        "tests/ui.spec.ts"
+        "tests/*.{mjs,ts}",
+        "vite.config.ts",
+        "playwright.config.ts"
       ],
       "project": [
         "src/**/*.{ts,svelte}",
-        "controller/**/*.ts",
+        "controller/src/**/*.ts",
         "shared/**/*.ts",
         "sdk/**/*.ts",
-        "scripts/**/*.mjs",
+        "scripts/**/*.{mjs,mts}",
         "tests/**/*.{mjs,ts}",
         "vite.config.ts",
         "playwright.config.ts"
       ],
-      "ignore": ["**/*.d.ts"]
+      "ignore": ["**/*.d.ts", "**/*.d.mts"]
     },
     "plugins/*": {
-      "entry": ["src/worker.ts", "ui/main.ts"],
+      "entry": ["src/worker.ts", "ui/main.ts", "contract.ts"],
       "project": ["src/**/*.ts", "ui/**/*.ts", "contract.ts"]
     }
   },

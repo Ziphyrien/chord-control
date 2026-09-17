@@ -2,7 +2,17 @@
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "printWidth": 100,
   "tabWidth": 2,
+  "useTabs": false,
   "endOfLine": "lf",
   "svelte": true,
-  "ignorePatterns": ["bun.lock", "src-tauri/Cargo.lock"]
+  "ignorePatterns": [
+    "bun.lock",
+    "src-tauri/Cargo.lock",
+    "build/**",
+    "dist/**",
+    "release/**",
+    ".local/**",
+    "src-tauri/target/**",
+    "src-tauri/gen/**"
+  ]
 }

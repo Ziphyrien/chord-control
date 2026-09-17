@@ -5,48 +5,67 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>学习权限</title>
     <style>
+      * {
+        box-sizing: border-box;
+      }
       body {
-        font:
-          15px system-ui,
-          sans-serif;
-        color: #28372e;
-        background: #f6f7f5;
         margin: 0;
-        padding: 36px;
+        padding: 32px;
+        background: #f6f7f5;
+        color: #28372e;
+        font:
+          15px/1.8 system-ui,
+          sans-serif;
       }
       main {
         max-width: 580px;
         margin: auto;
       }
       h1 {
+        margin: 0 0 16px;
         font-size: 24px;
         font-weight: 550;
       }
       p {
-        color: #6d7c73;
-        line-height: 1.8;
+        color: #52695d;
+      }
+      .browsers {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 24px 0;
       }
       button {
-        border: 1px solid #d5dfd8;
-        background: white;
         padding: 12px 18px;
+        border: 1px solid #c5d3ca;
         border-radius: 8px;
-        margin: 12px 12px 12px 0;
-        font: inherit;
+        background: white;
         color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      button:focus-visible {
+        outline: 2px solid #5e8470;
+        outline-offset: 3px;
       }
       #status {
-        min-height: 24px;
+        min-height: 28px;
       }
     </style>
   </head>
   <body>
     <main>
       <h1>专注学习</h1>
-      <p>打开浏览器需通过密保盘验证。学习壁纸已固定，更换背景的设置已禁用。</p>
-      <button data-browser="edge">Microsoft Edge</button
-      ><button data-browser="chrome">Google Chrome</button>
-      <p id="status" role="status"></p>
+      <p>打开浏览器前，请通过密保盘验证。保护启用时使用 Windows 默认壁纸并固定背景设置。</p>
+      <div class="browsers" role="group" aria-label="打开浏览器">
+        <button type="button" data-browser="edge" disabled>Microsoft Edge</button>
+        <button type="button" data-browser="chrome" disabled>Google Chrome</button>
+      </div>
+      <p id="status" role="status">正在读取保护状态…</p>
     </main>
     <!--PLUGIN_SCRIPT-->
   </body>

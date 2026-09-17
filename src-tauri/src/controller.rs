@@ -1,230 +1,304 @@
-use crate::desktop::data_dir;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU32, Ordering},
-    Mutex,
+//! Controller generations own a transport, event routing and a bounded restart policy.
+mod transport;
+use crate::sync::{lock, Cancellation, RestartBudget};
+use serde_json::{json, Value};
+use std::{
+    sync::{
+        mpsc::{self, SyncSender},
+        Mutex,
+    },
+    time::{Duration, Instant},
 };
-use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tauri_plugin_shell::{
-    process::{CommandChild, CommandEvent},
-    ShellExt,
-};
+use transport::{Event, Transport, MAX_FRAME};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct Generation(u64);
+struct Connection {
+    generation: Generation,
+    input: SyncSender<Vec<u8>>,
+    stop: Cancellation,
+    force: Cancellation,
+}
+#[derive(Default)]
+struct Inner {
+    sequence: u64,
+    connection: Option<Connection>,
+    stopping: bool,
+    blocked: bool,
+    retries: RestartBudget,
+    retry_cancel: Cancellation,
+}
 #[derive(Default)]
 pub(crate) struct ControllerState {
-    child: Mutex<Option<CommandChild>>,
-    quitting: AtomicBool,
-    failures: AtomicU32,
+    inner: Mutex<Inner>,
 }
-pub(crate) fn emit(app: &AppHandle, payload: serde_json::Value) {
-    // Plugin iframes have no Tauri capabilities; only the control window gets events.
-    let _ = app.emit_to("main", "controller:event", payload.to_string());
+
+pub(crate) fn emit(app: &AppHandle, value: Value) {
+    let _ = app.emit_to("main", "controller:event", value.to_string());
+}
+pub(crate) fn is_current(app: &AppHandle, generation: Generation) -> bool {
+    lock(&app.state::<ControllerState>().inner)
+        .connection
+        .as_ref()
+        .is_some_and(|connection| {
+            connection.generation == generation && !connection.force.is_cancelled()
+        })
+}
+fn enqueue(connection: &Connection, value: &Value) -> Result<(), String> {
+    if connection.force.is_cancelled() {
+        return Err("控制器正在释放资源".into());
+    }
+    let mut bytes = serde_json::to_vec(value).map_err(|e| e.to_string())?;
+    if bytes.len() >= MAX_FRAME {
+        return Err("Command exceeds size limit".into());
+    }
+    bytes.push(b'\n');
+    connection
+        .input
+        .try_send(bytes)
+        .map_err(|error| match error {
+            mpsc::TrySendError::Full(_) => "控制器请求队列已满，请稍后重试".into(),
+            mpsc::TrySendError::Disconnected(_) => "控制器离线".into(),
+        })
 }
 #[tauri::command]
 pub(crate) fn controller_command(
-    state: State<'_, ControllerState>,
+    app: AppHandle,
+    window: tauri::WebviewWindow,
     desktop: State<'_, crate::desktop::DesktopState>,
     command: String,
 ) -> Result<(), String> {
-    if command.len() > 2 * 1024 * 1024 {
+    crate::desktop::require_main(&window)?;
+    if command.len() >= MAX_FRAME {
         return Err("Command exceeds size limit".into());
     }
-    let value: serde_json::Value = serde_json::from_str(&command).map_err(|e| e.to_string())?;
-    if !value.is_object() {
-        return Err("Command must be an object".into());
-    }
-    let kind = value["type"].as_str().unwrap_or("");
-    if matches!(
-        kind,
-        "shutdown" | "desktop_action" | "plugin_window_closed" | "native_response"
-    ) {
-        return Err("Reserved desktop command".into());
-    }
-    if kind != "snapshot" && !desktop.unlocked.load(Ordering::SeqCst) {
+    let value: Value = serde_json::from_str(&command).map_err(|e| e.to_string())?;
+    crate::wire::validate_public_command(&value)?;
+    if value["type"] != "snapshot" && !desktop.is_unlocked() {
         return Err("控制中心尚未解锁".into());
     }
-    let mut lock = crate::sync::lock(&state.child);
-    lock.as_mut()
-        .ok_or("控制器离线，请从托盘重新启动控制器")?
-        .write(format!("{}\n", value).as_bytes())
-        .map_err(|e| e.to_string())
+    // Forward the original object. Generic affectedPluginIds and future payload data
+    // are interpreted by the controller, never by desktop/plugin-specific policy.
+    send_internal(&app, value)
 }
-pub(crate) fn send_internal(app: &AppHandle, value: serde_json::Value) -> Result<(), String> {
+pub(crate) fn send_internal(app: &AppHandle, value: Value) -> Result<(), String> {
     let state = app.state::<ControllerState>();
-    let mut lock = crate::sync::lock(&state.child);
-    lock.as_mut()
-        .ok_or("控制器离线")?
-        .write(format!("{}\n", value).as_bytes())
-        .map_err(|e| e.to_string())
+    let inner = lock(&state.inner);
+    if inner.stopping {
+        return Err("控制器正在退出".into());
+    }
+    enqueue(
+        inner
+            .connection
+            .as_ref()
+            .ok_or("控制器离线，请从托盘重新启动")?,
+        &value,
+    )
 }
 pub(crate) fn send_native_response(
     app: &AppHandle,
-    pid: u32,
-    value: serde_json::Value,
+    generation: Generation,
+    value: Value,
 ) -> Result<(), String> {
     let state = app.state::<ControllerState>();
-    let mut lock = crate::sync::lock(&state.child);
-    let child = lock
-        .as_mut()
-        .filter(|child| child.pid() == pid)
+    let inner = lock(&state.inner);
+    // Graceful plugin disposal still needs native replies after shutdown begins.
+    let connection = inner
+        .connection
+        .as_ref()
+        .filter(|c| c.generation == generation && !c.force.is_cancelled())
         .ok_or("原生请求所属的控制器已退出")?;
-    child
-        .write(format!("{value}\n").as_bytes())
-        .map_err(|e| e.to_string())
+    enqueue(connection, &value)
+}
+fn schedule_retry(app: &AppHandle, sequence: u64) {
+    let state = app.state::<ControllerState>();
+    let mut inner = lock(&state.inner);
+    if inner.stopping || inner.blocked || inner.sequence != sequence || inner.connection.is_some() {
+        return;
+    }
+    let Some(delay) = inner.retries.next() else {
+        drop(inner);
+        crate::desktop::report(
+            app,
+            "控制器连续失败，已停止自动重启，请查看日志或从托盘重试",
+        );
+        return;
+    };
+    let cancel = inner.retry_cancel.clone();
+    drop(inner);
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(delay).await;
+        if cancel.is_cancelled() {
+            return;
+        }
+        let valid = {
+            let state = app.state::<ControllerState>();
+            let inner = lock(&state.inner);
+            inner.sequence == sequence && !inner.stopping && inner.connection.is_none()
+        };
+        if valid {
+            if let Err(error) = start_controller(&app) {
+                crate::desktop::report(&app, &error);
+            }
+        }
+    });
 }
 pub(crate) fn start_controller(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<ControllerState>();
-    let mut lock = crate::sync::lock(&state.child);
-    if state.quitting.load(Ordering::SeqCst) {
+    let mut inner = lock(&state.inner);
+    if inner.stopping || !crate::lifecycle::is_running(app) {
         return Err("控制器正在退出".into());
     }
-    if lock.is_some() {
+    if inner.blocked {
+        return Err("控制器资源未释放，请重新启动主程序".into());
+    }
+    if inner.connection.is_some() {
         return Ok(());
     }
-    let dir = data_dir(app)?;
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let (mut events, child) = app
-        .shell()
-        .sidecar("plugin-controller")
-        .map_err(|e| e.to_string())?
-        .args(["--stdio"])
-        .env("CHORD_CONTROL_DATA_DIR", &dir)
-        .spawn()
-        .map_err(|e| format!("无法启动控制器: {e}"))?;
-    let pid = child.pid();
-    lock.replace(child);
-    drop(lock);
-    let started = std::time::Instant::now();
+    inner.sequence = inner
+        .sequence
+        .checked_add(1)
+        .ok_or("Controller generation exhausted")?;
+    let generation = Generation(inner.sequence);
+    let result = crate::desktop::data_dir(app).and_then(|dir| {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        Transport::spawn(&dir)
+    });
+    let mut transport = match result {
+        Ok(transport) => transport,
+        Err(error) => {
+            drop(inner);
+            schedule_retry(app, generation.0);
+            return Err(error);
+        }
+    };
+    let stop = Cancellation::default();
+    let force = Cancellation::default();
+    inner.connection = Some(Connection {
+        generation,
+        input: transport.input.clone(),
+        stop: stop.clone(),
+        force: force.clone(),
+    });
     let handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let log_path = dir.join("controller-stderr.log");
-        while let Some(event) = events.recv().await {
-            match event {
-                CommandEvent::Stdout(line) => {
-                    match serde_json::from_slice::<serde_json::Value>(&line) {
-                        Ok(value) => {
-                            if !crate::native::handle(&handle, &value, pid) {
-                                crate::desktop::handle_event(&handle, &value);
+    let spawn = std::thread::Builder::new().name("controller-supervisor".into()).spawn(move || {
+        let started = Instant::now();
+        let mut shutdown_at = None;
+        let mut fault = None;
+        loop {
+            if force.is_cancelled() { break; }
+            if stop.is_cancelled() && shutdown_at.is_none() {
+                shutdown_at = Some(Instant::now());
+                // A full/non-reading input pipe must never block the shutdown deadline.
+                let _ = transport.input.try_send(b"{\"id\":\"exit\",\"type\":\"shutdown\"}\n".to_vec());
+            }
+            if shutdown_at.is_some_and(|at| at.elapsed() >= Duration::from_secs(22)) { break; }
+            match transport.events.recv_timeout(Duration::from_millis(50)) {
+                Ok(Event::Frame(line)) if is_current(&handle, generation) => {
+                    match serde_json::from_slice::<Value>(&line) {
+                        Ok(value) if value.is_object() => {
+                            if !crate::native::handle(&handle, &value, generation) {
+                                crate::desktop::handle_event(&handle, &value, generation);
                                 emit(&handle, value);
                             }
                         }
-                        Err(error) => emit(
-                            &handle,
-                            serde_json::json!({"type":"error", "message":format!("控制器协议错误: {error}")}),
-                        ),
+                        _ => { fault = Some("控制器协议错误".to_owned()); break; }
                     }
                 }
-                CommandEvent::Stderr(line) => {
-                    if fs::metadata(&log_path)
-                        .map(|m| m.len() > 1024 * 1024)
-                        .unwrap_or(false)
-                    {
-                        let _ = fs::write(&log_path, b"");
-                    }
-                    if let Ok(mut file) =
-                        OpenOptions::new().create(true).append(true).open(&log_path)
-                    {
-                        let _ = file.write_all(&line);
-                        let _ = file.write_all(b"\n");
-                    }
-                }
-                CommandEvent::Error(error) => emit(
-                    &handle,
-                    serde_json::json!({"type":"error", "message":error}),
-                ),
-                CommandEvent::Terminated(payload) => {
-                    crate::desktop::disconnected(&handle);
-                    emit(
-                        &handle,
-                        serde_json::json!({"type":"disconnected", "message":format!("控制器已退出 ({:?})，可从托盘重新启动", payload.code)}),
-                    );
-                }
-                _ => {}
+                Ok(Event::Fault(error)) => { fault = Some(error); break; }
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                _ => {},
+            }
+            match transport.exited() {
+                Ok(true) => break,
+                Ok(false) => {},
+                Err(error) => { fault = Some(error); break; }
             }
         }
-        let state = handle.state::<ControllerState>();
+        // Invalidate before draining I/O: delayed native/UI responses cannot cross generations.
         {
-            let mut lock = crate::sync::lock(&state.child);
-            if lock.as_ref().map(|c| c.pid()) == Some(pid) {
-                lock.take();
+            let state = handle.state::<ControllerState>();
+            let mut inner = lock(&state.inner);
+            if inner.connection.as_ref().is_some_and(|c| c.generation == generation) {
+                // Leave the connection as a tombstone until all workers have drained.
+                inner.connection.as_mut().unwrap().force.cancel();
             }
         }
-        if !state.quitting.load(Ordering::SeqCst) {
-            let stable = started.elapsed() >= Duration::from_secs(60);
-            let retry = if stable {
-                state.failures.store(0, Ordering::SeqCst);
-                0
-            } else {
-                state.failures.fetch_add(1, Ordering::SeqCst)
-            };
-            if retry < 5 {
-                let retry_handle = handle.clone();
-                let delay = Duration::from_secs(1_u64 << retry.min(4));
-                std::thread::spawn(move || {
-                    std::thread::sleep(delay);
-                    if !retry_handle
-                        .state::<ControllerState>()
-                        .quitting
-                        .load(Ordering::SeqCst)
-                    {
-                        if let Err(error) = start_controller(&retry_handle) {
-                            crate::desktop::report(&retry_handle, &error);
-                        }
-                    }
-                });
-            } else {
-                crate::desktop::report(&handle, "控制器连续失败，已停止自动重启，请查看日志");
-            }
+        crate::desktop::disconnected(&handle);
+        let drained = transport.stop();
+        let state = handle.state::<ControllerState>();
+        let mut inner = lock(&state.inner);
+        if inner.connection.as_ref().is_some_and(|c| c.generation == generation) { inner.connection = None; }
+        if !drained { inner.blocked = true; }
+        if started.elapsed() >= Duration::from_secs(60) { inner.retries = RestartBudget::default(); }
+        let stopping = inner.stopping;
+        drop(inner);
+        if !stopping {
+            emit(&handle, json!({"type":"disconnected","message":fault.unwrap_or_else(|| "控制器已退出，正在尝试恢复".into())}));
+            schedule_retry(&handle, generation.0);
         }
     });
+    if let Err(error) = spawn {
+        inner.connection = None;
+        drop(inner);
+        schedule_retry(app, generation.0);
+        return Err(error.to_string());
+    }
     Ok(())
 }
-fn stop_controller(app: &AppHandle) {
-    if let Some(child) = crate::sync::lock(&app.state::<ControllerState>().child).as_mut() {
-        let _ = child.write(b"{\"id\":\"exit\",\"type\":\"shutdown\"}\n");
-    }
-    for _ in 0..200 {
-        if crate::sync::lock(&app.state::<ControllerState>().child).is_none() {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    kill(app);
-}
-pub(crate) fn quit(app: &AppHandle) {
-    if app
-        .state::<ControllerState>()
-        .quitting
-        .swap(true, Ordering::SeqCst)
+/// Returns after a bounded grace period; does not join pipe or native workers.
+pub(crate) fn shutdown(app: &AppHandle) -> Result<(), String> {
     {
-        return;
+        let state = app.state::<ControllerState>();
+        let mut inner = lock(&state.inner);
+        inner.stopping = true;
+        inner.retry_cancel.cancel();
+        if let Some(connection) = &inner.connection {
+            connection.stop.cancel();
+        }
     }
-    let app = app.clone();
-    std::thread::spawn(move || {
-        crate::guard::stop();
-        stop_controller(&app);
-        app.exit(0);
-    });
-}
-pub(crate) fn prepare_update(app: &AppHandle) {
-    app.state::<ControllerState>()
-        .quitting
-        .store(true, Ordering::SeqCst);
-    crate::guard::stop();
-    stop_controller(app);
-}
-pub(crate) fn resume_after_update(app: &AppHandle) {
-    app.state::<ControllerState>()
-        .quitting
-        .store(false, Ordering::SeqCst);
-    if let Err(error) = crate::guard::start(app).and_then(|()| start_controller(app)) {
-        crate::desktop::report(app, &error);
+    let deadline = Instant::now() + Duration::from_secs(24);
+    loop {
+        let state = app.state::<ControllerState>();
+        let inner = lock(&state.inner);
+        if inner.connection.is_none() {
+            return if inner.blocked {
+                Err("控制器资源无法完整释放".into())
+            } else {
+                Ok(())
+            };
+        }
+        if Instant::now() >= deadline {
+            if let Some(connection) = &inner.connection {
+                connection.force.cancel();
+            }
+            return Err("控制器关闭超时".into());
+        }
+        drop(inner);
+        std::thread::sleep(Duration::from_millis(50));
     }
 }
-pub(crate) fn kill(app: &AppHandle) {
-    if let Some(child) = crate::sync::lock(&app.state::<ControllerState>().child).take() {
-        let _ = child.kill();
+pub(crate) fn resume(app: &AppHandle) -> Result<(), String> {
+    {
+        let state = app.state::<ControllerState>();
+        let mut inner = lock(&state.inner);
+        if inner.connection.is_some() || inner.blocked {
+            return Err("旧控制器仍未释放，请重新启动主程序".into());
+        }
+        inner.stopping = false;
+        inner.retry_cancel = Cancellation::default();
+        inner.retries = RestartBudget::default();
+    }
+    start_controller(app)
+}
+pub(crate) fn force_stop(app: &AppHandle) {
+    let state = app.state::<ControllerState>();
+    let mut inner = lock(&state.inner);
+    inner.stopping = true;
+    inner.retry_cancel.cancel();
+    if let Some(connection) = &inner.connection {
+        connection.force.cancel();
     }
 }

@@ -1,6 +1,10 @@
 import { defineConfig } from "vite";
-import { catalogPublicKey, currentRepositorySlug } from "./scripts/repository-config.mjs";
 import { svelte, vitePreprocess } from "@sveltejs/vite-plugin-svelte";
+import { catalogPublicKey, currentRepositorySlug } from "./scripts/repository-config.mjs";
+
+const ignored = ["src-tauri", "controller", "build", "release", ".local", "test-results"].map(
+  (directory) => `**/${directory}/**`,
+);
 
 export default defineConfig({
   plugins: [svelte({ configFile: false, preprocess: vitePreprocess() })],
@@ -9,23 +13,6 @@ export default defineConfig({
     __CHORD_CONTROL_CATALOG_PUBLIC_KEY__: JSON.stringify(catalogPublicKey()),
   },
   clearScreen: false,
-  server: {
-    port: 1420,
-    strictPort: true,
-    host: "127.0.0.1",
-    watch: {
-      ignored: [
-        "**/src-tauri/**",
-        "**/controller/**",
-        "**/build/**",
-        "**/release/**",
-        "**/.local/**",
-        "**/test-results/**",
-      ],
-    },
-  },
-  build: {
-    target: "es2022",
-    sourcemap: true,
-  },
+  server: { host: "127.0.0.1", port: 1420, strictPort: true, watch: { ignored } },
+  build: { target: "es2022", sourcemap: true, outDir: "dist", emptyOutDir: true },
 });

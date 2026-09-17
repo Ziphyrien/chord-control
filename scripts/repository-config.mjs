@@ -1,38 +1,49 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { repositoryRoot } from "./release-files.mjs";
 
+const segment = /^(?!\.{1,2}$)[A-Za-z0-9_.-]+$/;
 export function parseRepositorySlug(value) {
-  if (typeof value !== "string") return;
+  if (typeof value !== "string" || !value.trim()) return undefined;
   const candidate = value.trim().replace(/\.git\/?$/, "");
-  if (!candidate) return;
-  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(candidate)) return candidate;
-  const scp = !candidate.includes("://") && candidate.match(/^(?:[^@/]+@)?([^:]+):(.+)$/);
-  const parsed = scp
-    ? { hostname: scp[1], pathname: `/${scp[2]}` }
-    : (() => {
-        try {
-          return new URL(candidate.includes("://") ? candidate : `https://${candidate}`);
-        } catch {
-          return;
-        }
-      })();
-  if (!parsed || parsed.hostname.toLowerCase() !== "github.com") return;
-  const parts = parsed.pathname.split("/").filter(Boolean);
-  return parts.length === 2 &&
-    /^[A-Za-z0-9_.-]+$/.test(parts[0]) &&
-    /^[A-Za-z0-9_.-]+$/.test(parts[1])
+  let path = candidate;
+  if (!/^[^/:]+\/[^/]+$/.test(candidate) || candidate.startsWith("github.com/")) {
+    const scp = candidate.match(/^git@github\.com:(.+)$/i);
+    if (scp) path = scp[1];
+    else {
+      let url;
+      try {
+        url = new URL(candidate.includes("://") ? candidate : `https://${candidate}`);
+      } catch {
+        return undefined;
+      }
+      if (
+        url.hostname.toLowerCase() !== "github.com" ||
+        !["https:", "ssh:"].includes(url.protocol) ||
+        url.password ||
+        url.search ||
+        url.hash ||
+        url.port
+      )
+        return undefined;
+      if (url.username && !(url.protocol === "ssh:" && url.username === "git")) return undefined;
+      path = url.pathname.replace(/^\//, "");
+    }
+  }
+  const parts = path.split("/");
+  return parts.length === 2 && parts.every((part) => segment.test(part))
     ? parts.join("/")
     : undefined;
 }
-export function currentRepositorySlug(cwd = process.cwd()) {
-  for (const value of [
-    process.env.CHORD_CONTROL_REPOSITORY,
-    process.env.GITHUB_REPOSITORY,
-    process.env.GH_REPO,
-  ]) {
-    const parsed = parseRepositorySlug(value);
-    if (parsed) return parsed;
+
+export function currentRepositorySlug(cwd = repositoryRoot) {
+  for (const name of ["CHORD_CONTROL_REPOSITORY", "GITHUB_REPOSITORY", "GH_REPO"]) {
+    const value = process.env[name];
+    if (value === undefined || value === "") continue;
+    const slug = parseRepositorySlug(value);
+    if (!slug) throw new Error(`Invalid ${name}; expected a GitHub owner/repository`);
+    return slug;
   }
   try {
     return parseRepositorySlug(
@@ -40,27 +51,34 @@ export function currentRepositorySlug(cwd = process.cwd()) {
         cwd,
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
+        timeout: 5000,
       }),
     );
   } catch {
-    return;
+    return undefined;
   }
 }
-export function catalogPublicKey(cwd = process.cwd()) {
-  const fromEnv = process.env.PLUGIN_SIGNING_PUBLIC_KEY?.trim();
-  if (fromEnv) return fromEnv;
+
+export function catalogPublicKey(cwd = repositoryRoot) {
+  const override = process.env.PLUGIN_SIGNING_PUBLIC_KEY?.trim();
+  if (override) return override;
   try {
     return readFileSync(resolve(cwd, "config/plugin-public.pem"), "utf8").trim();
-  } catch {
-    return "";
+  } catch (error) {
+    if (error.code === "ENOENT") return "";
+    throw error;
   }
 }
+
 export function distributionFor(repository) {
-  if (!repository) return;
+  if (!repository) return undefined;
+  const slug = parseRepositorySlug(repository);
+  if (!slug) throw new Error("Invalid distribution repository");
+  const releases = `https://github.com/${slug}/releases`;
   return {
-    repository,
-    pluginCatalogUrl: `https://github.com/${repository}/releases/download/plugin-channel/catalog.json`,
-    pluginReleaseBaseUrl: `https://github.com/${repository}/releases/download/PLUGIN_RELEASE_TAG`,
-    appReleaseUrl: `https://github.com/${repository}/releases/latest/download/Chord.Control-setup.exe`,
+    repository: slug,
+    pluginCatalogUrl: `${releases}/download/plugin-channel/catalog.json`,
+    pluginReleaseBaseUrl: `${releases}/download/PLUGIN_RELEASE_TAG`,
+    appReleaseUrl: `${releases}/latest/download/Chord.Control-setup.exe`,
   };
 }

@@ -4,116 +4,120 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { HostService } from "../../../sdk/index.ts";
 import type { Json } from "../../../shared/protocol.ts";
 import { WallpaperPolicy } from "./wallpaper.ts";
-export type Browser = "edge" | "chrome";
+import {
+  BROWSER_NAMES,
+  BrowserGate,
+  browserOf,
+  identity,
+  snapshot,
+  type Browser,
+} from "./browsers.ts";
+export type { Browser } from "./browsers.ts";
 export interface StudyPlatform {
   start(blocked: (browser: Browser) => void): Promise<void>;
   launch(browser: Browser): Promise<void>;
   dispose(): Promise<void>;
 }
-type Process = {
-  pid: number;
-  parentPid: number;
-  name: string;
-  executable: string;
-  createdAt: string;
-};
-const key = (process: Process) => `${process.pid}:${process.createdAt}`;
-const browserOf = (process: Process): Browser =>
-  process.name.toLowerCase() === "msedge.exe" ? "edge" : "chrome";
 export function createPlatform(
   host: HostService,
   dataDir: string,
-  bundleDir: string,
   log: (message: string) => void,
 ): StudyPlatform {
-  const policy = new WallpaperPolicy(host, dataDir, bundleDir),
-    paths = new Map<Browser, string>(),
-    allow = new Map<Browser, number>();
-  let active = false,
-    timer: ReturnType<typeof setTimeout> | undefined,
-    polling: Promise<void> | undefined;
-  let seen = new Set<string>();
+  const policy = new WallpaperPolicy(host, dataDir);
+  const gate = new BrowserGate();
+  let active = false;
+  let disposed = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let work: Promise<unknown> = Promise.resolve();
   const call = (operation: string, input: Json) =>
     host.native(operation, input, BACKGROUND_CONTEXT);
-  async function roots(): Promise<Process[]> {
-    const rows = (await call("process.list", { names: ["msedge.exe", "chrome.exe"] })) as Process[];
-    const ids = new Set(rows.map((row) => row.pid));
-    return rows.filter((row) => !ids.has(row.parentPid));
+  const rows = async () => snapshot(await call("process.list", { names: BROWSER_NAMES }));
+  function serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const next = work.then(operation);
+    work = next.catch(() => {});
+    return next;
   }
-  async function poll(blocked: (browser: Browser) => void): Promise<void> {
-    try {
-      if (!active || !(await policy.owns())) return;
-      const rows = await roots();
-      for (const row of rows) {
-        const browser = browserOf(row);
-        paths.set(browser, row.executable);
-        if (!active || seen.has(key(row)) || (allow.get(browser) ?? 0) > Date.now()) continue;
-        await call("process.terminate", {
-          pid: row.pid,
-          createdAt: row.createdAt,
-          executable: row.executable,
-        });
-        blocked(browser);
+  function schedule(blocked: (browser: Browser) => void): void {
+    if (!active) return;
+    timer = setTimeout(() => {
+      void serialize(async () => {
+        try {
+          if (!active || !(await policy.owns())) return;
+          const rejected = gate.blocked(await rows());
+          const prompted = new Set<Browser>();
+          for (const row of rejected) {
+            if (!active || !(await policy.owns())) break;
+            try {
+              await call("process.terminate", { ...identity(row) });
+              prompted.add(browserOf(row));
+            } catch (error) {
+              log(`浏览器拦截: ${String(error)}`);
+            }
+          }
+          if (active) for (const browser of prompted) blocked(browser);
+        } catch (error) {
+          if (active) log(`浏览器监测: ${String(error)}`);
+        } finally {
+          schedule(blocked);
+        }
+      });
+    }, 350);
+  }
+  async function executableFor(browser: Browser): Promise<string> {
+    const remembered = gate.paths.get(browser);
+    if (remembered) return remembered;
+    const suffix =
+      browser === "edge"
+        ? "Microsoft/Edge/Application/msedge.exe"
+        : "Google/Chrome/Application/chrome.exe";
+    for (const folder of [
+      process.env["ProgramFiles(x86)"],
+      process.env.ProgramFiles,
+      process.env.LOCALAPPDATA,
+    ]) {
+      if (!folder) continue;
+      const candidate = join(folder, suffix);
+      try {
+        await access(candidate);
+        return candidate;
+      } catch {
+        /* Probe the next standard installation directory. */
       }
-      seen = new Set(rows.map(key));
-    } catch (error) {
-      if (active) log(`浏览器监测: ${String(error)}`);
-    } finally {
-      if (active)
-        timer = setTimeout(() => {
-          polling = poll(blocked);
-        }, 350);
     }
+    throw new Error("未找到已安装的浏览器");
   }
   return {
-    async start(blocked) {
-      // Native snapshot succeeds before policies change; no shell startup or WMI readiness wait.
-      const rows = await roots();
-      seen = new Set(rows.map(key));
-      for (const row of rows) paths.set(browserOf(row), row.executable);
-      await policy.apply();
-      active = true;
-      timer = setTimeout(() => {
-        polling = poll(blocked);
-      }, 350);
-    },
-    async launch(browser) {
-      if (!active) throw new Error("学习权限已停止");
-      let executable = paths.get(browser);
-      if (!executable) {
-        const suffix =
-          browser === "edge"
-            ? "Microsoft/Edge/Application/msedge.exe"
-            : "Google/Chrome/Application/chrome.exe";
-        for (const folder of [
-          process.env["ProgramFiles(x86)"],
-          process.env.ProgramFiles,
-          process.env.LOCALAPPDATA,
-        ]) {
-          if (!folder) continue;
-          const candidate = join(folder, suffix);
-          try {
-            await access(candidate);
-            executable = candidate;
-            break;
-          } catch {
-            /* Try next installation location. */
-          }
+    start(blocked) {
+      return serialize(async () => {
+        if (disposed) throw new Error("学习权限已停止");
+        if (active) return;
+        // Readiness is checked before any policy write.
+        gate.initialize(await rows());
+        await policy.apply();
+        if (disposed) {
+          await policy.restore();
+          return;
         }
-      }
-      if (!executable) throw new Error("未找到已安装的浏览器");
-      allow.set(browser, Date.now() + 3000);
-      try {
-        await call("process.spawn", { executable, args: ["--new-window"] });
-      } catch (error) {
-        allow.delete(browser);
-        throw error;
-      }
+        active = true;
+        schedule(blocked);
+      });
+    },
+    launch(browser) {
+      return serialize(async () => {
+        if (!active || disposed || !(await policy.owns())) throw new Error("学习权限已停止");
+        const executable = await executableFor(browser);
+        if (!active || disposed) throw new Error("学习权限已停止");
+        const spawned = identity(
+          await call("process.spawn", { executable, args: ["--new-window"] }),
+        );
+        gate.authorize(spawned);
+      });
     },
     async dispose() {
+      disposed = true;
       active = false;
       clearTimeout(timer);
-      await polling;
+      await work;
       await policy.restore();
     },
   };

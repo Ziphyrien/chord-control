@@ -5,28 +5,34 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>系统信息与便笺</title>
     <style>
+      * {
+        box-sizing: border-box;
+      }
       body {
+        margin: 0;
+        padding: 28px;
+        color: #e8edf5;
+        background: #11161e;
         font:
           15px/1.6 "Segoe UI",
           sans-serif;
-        color: #e8edf5;
-        background: #11161e;
-        margin: 32px;
+      }
+      main {
+        max-width: 720px;
+        margin: auto;
       }
       h1 {
+        margin: 0 0 20px;
         font-size: 25px;
-        margin: 0;
-      }
-      p {
-        color: #8893a5;
       }
       dl {
         display: grid;
-        grid-template-columns: 140px 1fr;
-        gap: 10px;
+        grid-template-columns: minmax(100px, 1fr) 2fr;
+        gap: 10px 20px;
+        margin: 0 0 24px;
+        padding: 20px;
         background: #0b0e13;
         border: 1px solid #354153;
-        padding: 18px;
         border-radius: 8px;
       }
       dt {
@@ -34,39 +40,69 @@
       }
       dd {
         margin: 0;
+        overflow-wrap: anywhere;
+      }
+      label {
+        display: block;
+        margin-bottom: 8px;
       }
       textarea {
-        box-sizing: border-box;
         width: 100%;
-        min-height: 130px;
-        background: #0b0e13;
-        color: #e8edf5;
+        min-height: 160px;
+        resize: vertical;
         padding: 12px;
         border: 1px solid #354153;
         border-radius: 8px;
+        background: #0b0e13;
+        color: inherit;
         font: inherit;
       }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 14px;
+      }
       button {
-        margin: 14px 10px 0 0;
         padding: 10px 18px;
-        background: #9fe870;
         border: 0;
         border-radius: 5px;
+        background: #9fe870;
+        color: #13200e;
+        font: inherit;
         cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      :focus-visible {
+        outline: 2px solid #79d8d2;
+        outline-offset: 3px;
       }
       output {
         display: block;
+        min-height: 24px;
         margin-top: 12px;
         color: #79d8d2;
       }
     </style>
   </head>
   <body>
-    <h1>系统信息与便笺</h1>
-    <dl id="info"><dt>正在读取…</dt></dl>
-    <label for="note">本机便笺</label><textarea id="note" maxlength="10000"></textarea
-    ><button id="save">保存便笺</button><button id="refresh">刷新主机信息</button
-    ><output id="status" aria-live="polite"></output>
+    <main>
+      <h1>系统信息与便笺</h1>
+      <dl id="info" aria-live="polite">
+        <dt>正在读取</dt>
+        <dd>…</dd>
+      </dl>
+      <label for="note">本机便笺（最多 10000 字符）</label>
+      <textarea id="note" maxlength="10000" disabled></textarea>
+      <div class="actions">
+        <button id="save" type="button" disabled>保存便笺</button
+        ><button id="refresh" type="button">刷新主机信息</button>
+      </div>
+      <output id="status" aria-live="polite"></output>
+    </main>
     <!--PLUGIN_SCRIPT-->
   </body>
 </html>

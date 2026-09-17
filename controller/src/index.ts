@@ -1,107 +1,111 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { Console } from "node:console";
-import { ConfigStore } from "./config.ts";
-import { ArchiveStore } from "./storage.ts";
-import { PluginRuntime } from "./runtime.ts";
-import { PluginUiServer } from "./ui-server.ts";
-import { PluginManager } from "./plugin-manager.ts";
-import { ActivityLog } from "./activity.ts";
-import { ControllerApplication } from "./application.ts";
-import { createSerialQueue } from "./queue.ts";
-import { bindStdio } from "./stdio.ts";
-import { NativeBridge } from "./native-bridge.ts";
+import { ConfigStore } from "./infrastructure/config-store.ts";
+import { ArchiveStore } from "./infrastructure/archives.ts";
+import { SignedReleaseSource } from "./infrastructure/release-source.ts";
+import { ChordRuntime } from "./runtime/chord-runtime.ts";
+import { NativeBridge } from "./transport/native-bridge.ts";
+import { PluginHttpServer } from "./transport/plugin-http.ts";
+import { StdioTransport } from "./transport/stdio.ts";
+import { ActivityLog, serialQueue } from "./application/execution.ts";
+import { PluginService } from "./application/plugin-service.ts";
+import { ControllerApplication } from "./application/controller.ts";
+import { object } from "../../shared/validation.ts";
 
-// Keep plugin console output separate from the control protocol.
-globalThis.console = new Console({ stdout: process.stderr, stderr: process.stderr });
+// The executable entry is the only module that owns process globals and transport wiring.
+console = new Console({ stdout: process.stderr, stderr: process.stderr });
 const root =
-  process.env.CHORD_CONTROL_DATA_DIR ??
-  (process.env.LOCALAPPDATA
-    ? join(process.env.LOCALAPPDATA, "ChordControl")
-    : join(homedir(), ".chord-control"));
-const activity = new ActivityLog();
-const repository = new ConfigStore(root);
-const archives = new ArchiveStore(join(root, "artifacts"), join(root, "staging"));
-const native = new NativeBridge((value) => process.stdout.write(JSON.stringify(value) + "\n"));
-const runtime = new PluginRuntime(
-  archives.staging,
-  join(root, "data"),
-  (id, message) => activity.add("插件日志", `${id}: ${message}`),
-  async (id, visible) => {
-    const plugin = repository.value.plugins.find((entry) => entry.id === id);
-    const title = plugin?.installed?.name ?? plugin?.latest?.name ?? id;
+  process.env.CHORD_CONTROL_DATA_DIR ?? join(process.env.LOCALAPPDATA ?? homedir(), "ChordControl");
+const allowUnsigned = process.env.CHORD_CONTROL_ALLOW_UNSIGNED === "1";
+const repository = new ConfigStore(root, allowUnsigned),
+  archives = new ArchiveStore(root),
+  source = new SignedReleaseSource(allowUnsigned);
+const activity = new ActivityLog(),
+  gate = serialQueue();
+const native = new NativeBridge((value) => transport.emit(value));
+const runtime = new ChordRuntime({
+  staging: archives.staging,
+  data: join(root, "data"),
+  native,
+  log: (id, detail) => activity.add("插件日志", `${id}: ${detail}`),
+  present: async (id, visible) => {
+    const plugin = repository.snapshot().plugins.find((item) => item.id === id);
+    const title = plugin?.installed?.name ?? plugin?.available?.name ?? id;
     if (!visible) {
-      process.stdout.write(
-        `${JSON.stringify({ type: "plugin_window", pluginId: id, title, visible })}\n`,
-      );
+      ui.revoke(id);
+      transport.emit({ type: "plugin_window", pluginId: id, title, visible });
       return;
     }
     const page = await ui.open(id);
-    if (page && typeof page === "object" && !Array.isArray(page) && typeof page.url === "string")
-      process.stdout.write(
-        `${JSON.stringify({ type: "plugin_window", pluginId: id, title, visible, url: page.url })}\n`,
-      );
-  },
-  native,
-);
-const enqueue = createSerialQueue();
-const ui = new PluginUiServer(runtime, enqueue);
-const plugins = new PluginManager(repository, archives, runtime, (title, detail, tone) =>
-  activity.add(title, detail, tone),
-);
-const app = new ControllerApplication({
-  plugins,
-  ui: runtime,
-  openUi: (id) => ui.open(id),
-  activity,
-  enqueue,
-  dataDir: root,
-  emit: (event) => {
-    process.stdout.write(`${JSON.stringify(event)}\n`);
+    if (!object(page) || typeof page.url !== "string") throw new Error("插件 UI 地址无效");
+    transport.emit({ type: "plugin_window", pluginId: id, title, visible, url: page.url });
   },
 });
-let stopping = false;
+const ui = new PluginHttpServer(runtime, gate);
+const plugins = new PluginService({
+  repository,
+  archives,
+  source,
+  runtime,
+  gate,
+  log: activity.add,
+  allowUnsigned,
+});
+const app = new ControllerApplication({
+  plugins,
+  runtime,
+  gate,
+  activity,
+  dataDir: root,
+  openUi: (id) => ui.open(id),
+  emit: (event) => transport.emit(event),
+});
+let closing: Promise<void> | undefined;
+let ready: Promise<void> = Promise.resolve();
 function stop(): void {
-  if (stopping) return;
-  stopping = true;
+  if (closing) return;
   app.stop();
-  ui.close();
-  const deadline = setTimeout(() => process.exit(0), 15000);
-  void ready
-    .catch(() => {})
-    .then(() => enqueue(() => runtime.dispose()))
-    .finally(() => {
-      clearTimeout(deadline);
+  source.close();
+  const deadline = setTimeout(() => process.exit(1), 20_000);
+  closing = (async () => {
+    try {
+      await ready.catch(() => undefined);
+      await ui.close();
+      await plugins.close();
+    } catch (error) {
+      console.error(error);
+      process.exitCode = 1;
+    } finally {
       native.close();
-      process.exit(0);
-    });
+      transport.close();
+      clearTimeout(deadline);
+      process.exit(process.exitCode ?? 0);
+    }
+  })();
 }
-async function main(): Promise<void> {
+const transport = new StdioTransport(process.stdin, process.stdout, {
+  submit: async (id, command) => {
+    await ready;
+    await app.submit(id, command);
+  },
+  internal: (value) => native.receive(value),
+  stop,
+});
+async function start(): Promise<void> {
   await repository.load();
   await archives.prepare();
   await ui.start();
-  const restored = repository.value.plugins.some((plugin) => Boolean(plugin.installed));
-  await plugins.restoreAll();
-  if (!restored && !stopping) await plugins.checkUpdates();
-  activity.add(
-    "已启动",
-    `${plugins.summaries().filter((plugin) => plugin.running).length} 个插件运行中`,
-  );
-  if (!stopping) app.start(true);
+  await plugins.restore();
+  if (!repository.snapshot().plugins.some((item) => item.installed)) await plugins.checkUpdates();
+  if (!closing) app.start();
 }
-let ready: Promise<void>;
-bindStdio(
-  {
-    submit: (id, command) => {
-      void ready.then(() => app.submit(id, command)).catch((error) => app.report(error));
-    },
-    report: (error) => app.report(error),
-  },
-  stop,
-  (value) => native.receive(value),
-);
-ready = main();
+transport.start();
+process.once("SIGINT", stop);
+process.once("SIGTERM", stop);
+ready = start();
 void ready.catch((error) => {
-  app.report(error);
+  console.error(error);
+  process.exitCode = 1;
   stop();
 });

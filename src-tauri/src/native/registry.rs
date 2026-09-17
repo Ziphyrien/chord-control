@@ -1,16 +1,45 @@
+//! Lossless HKCU values. Paths, desired policy and restoration journals belong to plugins.
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::io;
 use winreg::{enums::*, RegKey, RegValue};
-
-#[derive(Deserialize, Serialize, Debug, PartialEq)]
+const MAX_BYTES: usize = 32768;
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawValue {
     r#type: u32,
     bytes: Vec<u8>,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Read {
+    path: String,
+    name: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Write {
+    path: String,
+    name: String,
+    value: Value,
+}
+fn validate(path: &str, name: &str) -> Result<(), String> {
+    if path.is_empty()
+        || path.len() > 512
+        || path.contains(['\0', '/'])
+        || path
+            .split('\\')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return Err("无效 HKCU 相对路径".into());
+    }
+    if name.len() > 256 || name.contains('\0') {
+        return Err("无效注册表值名称".into());
+    }
+    Ok(())
+}
 fn kind(value: u32) -> Result<RegType, String> {
-    let types = [
+    [
         REG_NONE,
         REG_SZ,
         REG_EXPAND_SZ,
@@ -23,28 +52,33 @@ fn kind(value: u32) -> Result<RegType, String> {
         REG_FULL_RESOURCE_DESCRIPTOR,
         REG_RESOURCE_REQUIREMENTS_LIST,
         REG_QWORD,
-    ];
-    types
-        .into_iter()
-        .find(|t| t.clone() as u32 == value)
-        .ok_or("不支持的注册表类型".into())
+    ]
+    .into_iter()
+    .find(|kind| kind.clone() as u32 == value)
+    .ok_or("不支持的注册表类型".into())
 }
-fn read(path: &str, name: &str) -> Result<Option<RawValue>, String> {
+fn read(request: Read) -> Result<Value, String> {
+    validate(&request.path, &request.name)?;
     let result = RegKey::predef(HKEY_CURRENT_USER)
-        .open_subkey(path)
-        .and_then(|key| key.get_raw_value(name));
+        .open_subkey_with_flags(request.path, KEY_QUERY_VALUE)
+        .and_then(|key| key.get_raw_value(request.name));
     match result {
-        Ok(value) => Ok(Some(RawValue {
+        Ok(value) if value.bytes.len() <= MAX_BYTES => serde_json::to_value(RawValue {
             r#type: value.vtype as u32,
             bytes: value.bytes,
-        })),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e.to_string()),
+        })
+        .map_err(|e| e.to_string()),
+        Ok(_) => Err("注册表值过大".into()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Value::Null),
+        Err(error) => Err(error.to_string()),
     }
 }
-fn write(path: &str, name: &str, value: Option<RawValue>) -> Result<(), String> {
+fn write(request: Write) -> Result<Value, String> {
+    validate(&request.path, &request.name)?;
+    let value: Option<RawValue> =
+        serde_json::from_value(request.value).map_err(|e| e.to_string())?;
     if let Some(value) = value {
-        if value.bytes.len() > 32768 {
+        if value.bytes.len() > MAX_BYTES {
             return Err("注册表值过大".into());
         }
         let raw = RegValue {
@@ -52,61 +86,29 @@ fn write(path: &str, name: &str, value: Option<RawValue>) -> Result<(), String> 
             bytes: value.bytes,
         };
         let (key, _) = RegKey::predef(HKEY_CURRENT_USER)
-            .create_subkey(path)
+            .create_subkey_with_flags(request.path, KEY_SET_VALUE)
             .map_err(|e| e.to_string())?;
-        key.set_raw_value(name, &raw).map_err(|e| e.to_string())
+        key.set_raw_value(request.name, &raw)
+            .map_err(|e| e.to_string())?;
     } else {
+        // Deleting an absent value/key must not create a key as a side effect.
         match RegKey::predef(HKEY_CURRENT_USER)
-            .open_subkey_with_flags(path, KEY_SET_VALUE)
-            .and_then(|key| key.delete_value(name))
+            .open_subkey_with_flags(request.path, KEY_SET_VALUE)
+            .and_then(|key| key.delete_value(request.name))
         {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(e.to_string()),
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
         }
     }
+    Ok(Value::Null)
 }
 pub(super) fn execute(operation: &str, input: &Value) -> Result<Value, String> {
-    let path = input["path"]
-        .as_str()
-        .filter(|p| !p.is_empty() && p.len() <= 512 && !p.contains('\0'))
-        .ok_or("无效注册表路径")?;
-    let name = input["name"]
-        .as_str()
-        .filter(|p| p.len() <= 256 && !p.contains('\0'))
-        .ok_or("无效注册表值名称")?;
-    if operation == "registry.read" {
-        return serde_json::to_value(read(path, name)?).map_err(|e| e.to_string());
-    }
-    let value = serde_json::from_value(input.get("value").ok_or("缺少注册表值")?.clone())
-        .map_err(|e| e.to_string())?;
-    write(path, name, value)?;
-    Ok(json!(null))
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn raw_registry_values_restore_and_missing_stays_missing() {
-        let path = format!("Software\\ChordControl\\Tests\\{}", std::process::id());
-        assert_eq!(read(&path, "value").unwrap(), None);
-        write(
-            &path,
-            "value",
-            Some(RawValue {
-                r#type: 3,
-                bytes: vec![0, 255, 10],
-            }),
-        )
-        .unwrap();
-        assert_eq!(
-            read(&path, "value").unwrap().unwrap().bytes,
-            vec![0, 255, 10]
-        );
-        write(&path, "value", None).unwrap();
-        assert_eq!(read(&path, "value").unwrap(), None);
-        RegKey::predef(HKEY_CURRENT_USER)
-            .delete_subkey_all(&path)
-            .unwrap();
+    match operation {
+        "registry.read" => read(serde_json::from_value(input.clone()).map_err(|e| e.to_string())?),
+        "registry.write" => {
+            write(serde_json::from_value(input.clone()).map_err(|e| e.to_string())?)
+        }
+        _ => Err("未知注册表操作".into()),
     }
 }

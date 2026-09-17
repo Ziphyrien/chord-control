@@ -10,103 +10,75 @@
       }
       body {
         margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
         background: #f6f7f5;
         color: #23302c;
         font:
           15px system-ui,
           sans-serif;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
       }
       main {
+        width: min(100%, 384px);
+        padding: 20px 24px;
         text-align: center;
-        width: 384px;
-        padding: 24px;
       }
       h1 {
+        margin: 0 0 16px;
         font-size: 21px;
         font-weight: 550;
-        margin: 0 0 10px;
+        overflow-wrap: anywhere;
       }
-      p {
-        color: #77837d;
-        font-size: 13px;
-        min-height: 20px;
-      }
-      .board {
-        width: 336px;
-        height: 336px;
-        position: relative;
-        touch-action: none;
+      #cells {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        touch-action: manipulation;
         user-select: none;
       }
-      .cells {
-        display: grid;
-        grid-template-columns: repeat(6, 56px);
-        grid-template-rows: repeat(6, 56px);
-      }
-      .cell {
-        width: 56px;
-        height: 56px;
+      button {
+        aspect-ratio: 1;
+        min-width: 0;
         padding: 0;
         border: 0;
-        background: none;
+        border-radius: 50%;
         color: #2a3931;
+        background: transparent;
         font:
           500 22px ui-monospace,
           monospace;
       }
-      .cell:focus-visible {
-        outline: 2px solid #5e8470;
-        outline-offset: -8px;
-        border-radius: 50%;
-      }
-      svg {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        width: 336px;
-        height: 336px;
-      }
-      polyline {
-        stroke: #8bada0;
-        stroke-width: 3;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-        fill: none;
-      }
-      footer {
-        margin-top: 18px;
-        display: flex;
-        gap: 22px;
-        justify-content: center;
-      }
-      footer button {
-        border: 0;
-        background: transparent;
-        color: #52695d;
-        font: inherit;
+      button:enabled {
         cursor: pointer;
       }
-      #status {
-        height: 20px;
-        color: #52695d;
+      button:active:enabled {
+        background: #e2ebe5;
       }
-      .hidden {
-        visibility: hidden;
+      button:focus-visible {
+        outline: 2px solid #5e8470;
+        outline-offset: -6px;
+      }
+      button:disabled {
+        opacity: 0.55;
+      }
+      p {
+        min-height: 22px;
+        margin: 12px 0 0;
+        color: #52695d;
+        font-size: 13px;
+      }
+      #input {
+        letter-spacing: 3px;
+        overflow-wrap: anywhere;
       }
     </style>
   </head>
   <body>
     <main>
       <h1 id="title">密保盘</h1>
-      <div class="board" id="board" aria-label="密保盘">
-        <div class="cells" id="cells"></div>
-        <svg aria-hidden="true" viewBox="0 0 336 336"><polyline id="trace"></polyline></svg>
-      </div>
+      <div id="cells" role="group" aria-label="单击输入，最后点击 ＃ 确认"></div>
+      <p id="input" aria-live="polite"></p>
       <p id="status" role="status"></p>
-      <footer><button id="practice">试用</button><button id="cancel">取消</button></footer>
     </main>
     <!--PLUGIN_SCRIPT-->
   </body>

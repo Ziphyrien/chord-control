@@ -3,52 +3,60 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { ControlHost, PluginUi } from "../../../sdk/index.ts";
 import { PasswordPrompt } from "../contract.ts";
 import { Challenges } from "./challenges.ts";
+
 export default defineFacet({
   id: "com.chord.password-pad.worker",
   setup(env) {
     const host = env.use(ControlHost);
-    let disposed = false;
+    let stopped = false;
+    let shown: boolean | undefined;
+    let presentation: Promise<void> = Promise.resolve();
     const challenges = new Challenges(() => {
-      if (!disposed)
-        void host.present(Boolean(challenges.view()), BACKGROUND_CONTEXT).catch(async (error) => {
-          challenges.dispose();
-          await host.log(String(error), BACKGROUND_CONTEXT);
-        });
+      presentation = presentation.then(async () => {
+        const visible = challenges.pending;
+        if (stopped || shown === visible) return;
+        try {
+          await host.present(visible, BACKGROUND_CONTEXT);
+          shown = visible;
+        } catch (error) {
+          shown = undefined;
+          challenges.close();
+          await host.log(`密保盘窗口: ${String(error)}`, BACKGROUND_CONTEXT).catch(() => {});
+        }
+      });
     });
-    env.own(() => {
-      disposed = true;
+    env.own(async () => {
+      stopped = true;
       challenges.dispose();
+      await presentation;
     });
     env.provide(PasswordPrompt, {
-      async authorize(title, context) {
-        if (typeof title !== "string") throw new Error("验证请求格式错误");
+      authorize(title, context) {
+        if (typeof title !== "string") return Promise.reject(new Error("验证请求格式错误"));
         return challenges.request(title, context.abortSignal);
       },
     });
     env.provide(PluginUi, {
       async call(method, input) {
-        if (method === "challenge") return challenges.view();
-        if (method === "window_closed") {
-          challenges.dispose();
-          return null;
-        }
-        if (method === "practice") {
-          void challenges.request("试用密保盘");
-          return challenges.view();
-        }
-        if (
-          input &&
-          typeof input === "object" &&
-          !Array.isArray(input) &&
-          typeof input.id === "string"
-        ) {
-          if (method === "submit") return { approved: challenges.submit(input.id, input.path) };
-          if (method === "cancel") {
-            challenges.cancel(input.id);
+        switch (method) {
+          case "challenge":
+            return challenges.view();
+          case "window_closed":
+            challenges.close();
             return null;
+          case "submit": {
+            if (
+              !input ||
+              typeof input !== "object" ||
+              Array.isArray(input) ||
+              typeof input.id !== "string"
+            )
+              throw new Error("验证提交格式错误");
+            return { approved: challenges.submit(input.id, input.revision, input.sequence) };
           }
+          default:
+            throw new Error("无效的密保盘操作");
         }
-        throw new Error("无效的密保盘操作");
       },
     });
   },

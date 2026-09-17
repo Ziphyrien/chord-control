@@ -6,26 +6,37 @@ on:
       - "plugins/**"
       - "sdk/**"
       - "shared/**"
-      - "scripts/build-plugins.mjs"
-      - "scripts/publish-plugins.mjs"
+      - "config/plugin-public.pem"
+      - "scripts/**"
       - "package.json"
       - "bun.lock"
+      - "tsconfig.json"
+      - "knip.json"
       - ".oxlintrc.json"
       - ".oxfmtrc.json"
       - ".github/workflows/plugins.yml"
+      - ".github/workflows/quality.yml"
   workflow_dispatch:
 permissions:
-  contents: write
-env:
-  CHORD_CONTROL_REPOSITORY: ${{ github.repository }}
+  contents: read
 concurrency:
   group: plugin-publishing
   cancel-in-progress: false
+env:
+  CHORD_CONTROL_REPOSITORY: ${{ github.repository }}
+  PLUGIN_RELEASE_TAG: plugins-${{ github.sha }}-${{ github.run_id }}
 jobs:
-  publish:
+  checks:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/quality.yml
+  build:
+    if: github.ref == 'refs/heads/main'
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: package.json
@@ -33,27 +44,45 @@ jobs:
         with:
           node-version: "26"
           package-manager-cache: false
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - run: bun install --frozen-lockfile
-      - run: bun run lint
-      - run: bun run knip
-      - run: bun run format:check
-      - run: bun run typecheck
-      - name: Build and sign plugins
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Set release timestamp
+        shell: pwsh
+        run: |
+          $timestamp = git log -1 --format=%ct
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read source timestamp' }
+          "SOURCE_DATE_EPOCH=$timestamp" >> $env:GITHUB_ENV
+      - name: Build and sign plugin catalogue
         run: bun run plugins:build
         env:
           PLUGIN_SIGNING_PRIVATE_KEY: ${{ secrets.PLUGIN_SIGNING_PRIVATE_KEY }}
-          PLUGIN_RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/plugins-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-      - name: Publish artifacts and update catalogue
-        run: node scripts/publish-plugins.mjs
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          PLUGIN_RELEASE_TAG: plugins-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: signed-plugin-catalogue
           path: release/plugins/
           if-no-files-found: error
+  publish:
+    needs: [checks, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "26"
+          package-manager-cache: false
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v8
+        with:
+          name: signed-plugin-catalogue
+          path: release/plugins/
+      - name: Publish plugins
+        run: bun run plugins:publish
+        env:
+          GH_TOKEN: ${{ github.token }}

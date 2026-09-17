@@ -1,119 +1,89 @@
-import { randomInt, randomUUID } from "node:crypto";
-const GRID_SIZE = 6;
-const ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-function dailyPassword(date = new Date()): string {
-  return `${date.getMonth() + 1 + date.getDate()}${["S", "M", "T", "W", "T", "F", "S"][date.getDay()]}`;
-}
-function dateKey(date: Date): string {
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-}
-function adjacent(a: number, b: number): boolean {
-  return (
-    a !== b &&
-    Math.abs((a % GRID_SIZE) - (b % GRID_SIZE)) <= 1 &&
-    Math.abs(Math.floor(a / GRID_SIZE) - Math.floor(b / GRID_SIZE)) <= 1
-  );
-}
-function createGrid(password: string, random = randomInt): string[] {
-  const cells = Array.from({ length: GRID_SIZE ** 2 }, () => ALPHABET[random(ALPHABET.length)]);
-  const path = [random(cells.length)];
-  for (let i = 1; i < password.length; i++) {
-    const next = cells
-      .map((_, index) => index)
-      .filter((index) => !path.includes(index) && adjacent(path.at(-1)!, index));
-    path.push(next[random(next.length)]);
-  }
-  path.forEach((index, offset) => {
-    cells[index] = password[offset];
-  });
-  return cells;
-}
-type Challenge = {
-  id: string;
-  title: string;
-  cells: string[];
-  expiresAt: number;
+import { randomUUID } from "node:crypto";
+import { GRID_SIZE, type ChallengeView } from "../input.ts";
+import { accepts, localDay, makeBoard, passwordFor } from "./board.ts";
+const LIFETIME_MS = 120_000;
+const ATTEMPTS = 5;
+interface Pending {
+  view: ChallengeView;
+  answer: string;
   day: string;
-  password: string;
   attempts: number;
-  finish(granted: boolean): void;
-};
+  settle(approved: boolean): void;
+}
+
+/** FIFO authorization queue. Each request owns its deadline, attempts and abort listener. */
 export class Challenges {
-  private readonly pending = new Map<string, Challenge>();
-  constructor(
-    private readonly changed: () => void,
-    private readonly now = () => new Date(),
-  ) {}
+  private readonly queue = new Map<string, Pending>();
+  private readonly changed: () => void;
+  private readonly now: () => Date;
+  private disposed = false;
+  constructor(changed: () => void, now = () => new Date()) {
+    this.changed = changed;
+    this.now = now;
+  }
+  get pending(): boolean {
+    return this.queue.size > 0;
+  }
   request(title: string, signal?: AbortSignal): Promise<boolean> {
-    if (this.pending.size >= 12 || signal?.aborted) return Promise.resolve(false);
-    const date = this.now(),
-      password = dailyPassword(date),
-      id = randomUUID();
+    if (this.disposed || signal?.aborted || this.queue.size >= 12) return Promise.resolve(false);
+    const date = this.now();
+    const answer = passwordFor(date);
+    const id = randomUUID();
     return new Promise((resolve) => {
-      const cancel = () => finish(false);
-      const timer = setTimeout(cancel, 120000);
-      const finish = (granted: boolean) => {
-        if (!this.pending.delete(id)) return;
+      const deny = () => settle(false);
+      const timer = setTimeout(deny, LIFETIME_MS);
+      const settle = (approved: boolean) => {
+        if (!this.queue.delete(id)) return;
         clearTimeout(timer);
-        signal?.removeEventListener("abort", cancel);
-        resolve(granted);
+        signal?.removeEventListener("abort", deny);
+        resolve(approved);
         this.changed();
       };
-      this.pending.set(id, {
-        id,
-        title: title.slice(0, 120),
-        cells: createGrid(password),
-        expiresAt: date.getTime() + 120000,
-        day: dateKey(date),
-        password,
+      this.queue.set(id, {
+        answer,
+        day: localDay(date),
         attempts: 0,
-        finish,
+        settle,
+        view: {
+          id,
+          revision: 0,
+          title: title.slice(0, 120),
+          cells: makeBoard(answer),
+          size: GRID_SIZE,
+          expiresAt: date.getTime() + LIFETIME_MS,
+        },
       });
-      signal?.addEventListener("abort", cancel, { once: true });
+      signal?.addEventListener("abort", deny, { once: true });
       this.changed();
     });
   }
-  view(): { id: string; title: string; cells: string[]; size: number; expiresAt: number } | null {
-    for (const item of this.pending.values())
-      if (this.now().getTime() >= item.expiresAt || dateKey(this.now()) !== item.day)
-        item.finish(false);
-    const item = this.pending.values().next().value;
-    return item
-      ? {
-          id: item.id,
-          title: item.title,
-          cells: [...item.cells],
-          size: GRID_SIZE,
-          expiresAt: item.expiresAt,
-        }
-      : null;
-  }
-  submit(id: string, path: unknown): boolean {
-    const item = this.pending.get(id);
-    if (!item) return false;
-    if (this.now().getTime() >= item.expiresAt || dateKey(this.now()) !== item.day) {
-      item.finish(false);
-      return false;
+  private current(): Pending | undefined {
+    const date = this.now();
+    for (const item of this.queue.values()) {
+      if (date.getTime() >= item.view.expiresAt || localDay(date) !== item.day) item.settle(false);
     }
-    const valid =
-      Array.isArray(path) &&
-      path.length === item.password.length &&
-      path.every((index) => Number.isInteger(index) && index >= 0 && index < GRID_SIZE ** 2) &&
-      new Set(path).size === path.length &&
-      path.every((index, offset) => offset === 0 || adjacent(path[offset - 1], index)) &&
-      path.map((index) => item.cells[index]).join("") === item.password;
-    if (valid) item.finish(true);
-    else if (++item.attempts >= 5) item.finish(false);
+    return this.queue.values().next().value;
+  }
+  view(): ChallengeView | null {
+    const item = this.current();
+    return item ? { ...item.view, cells: [...item.view.cells] } : null;
+  }
+  submit(id: string, revision: unknown, sequence: unknown): boolean {
+    const item = this.current();
+    if (!item || item.view.id !== id || revision !== item.view.revision) return false;
+    const approved = accepts(item.view.cells, item.answer, sequence);
+    if (approved || ++item.attempts >= ATTEMPTS) item.settle(approved);
     else {
-      item.cells = createGrid(item.password);
+      item.view = { ...item.view, revision: item.view.revision + 1, cells: makeBoard(item.answer) };
       this.changed();
     }
-    return valid;
+    return approved;
   }
-  cancel(id: string): void {
-    this.pending.get(id)?.finish(false);
+  close(): void {
+    for (const item of this.queue.values()) item.settle(false);
   }
   dispose(): void {
-    for (const item of this.pending.values()) item.finish(false);
+    this.disposed = true;
+    this.close();
   }
 }

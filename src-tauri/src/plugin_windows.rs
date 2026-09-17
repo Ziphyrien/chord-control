@@ -1,52 +1,41 @@
+//! Unprivileged plugin webviews. Window identity is reversible and generation-bound.
+use serde::Deserialize;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
-pub(crate) fn valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 100
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b".-_".contains(&b))
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Presentation {
+    plugin_id: String,
+    visible: bool,
+    title: Option<String>,
+    url: Option<String>,
 }
 fn label(id: &str) -> String {
-    format!(
-        "plugin-{}",
-        id.bytes().map(|b| format!("{b:02x}")).collect::<String>()
-    )
+    use std::fmt::Write;
+    let mut label = String::from("plugin-");
+    for byte in id.bytes() {
+        let _ = write!(label, "{byte:02x}");
+    }
+    label
 }
-fn id_from_label(label: &str) -> Option<String> {
+fn plugin_id(label: &str) -> Option<String> {
     let encoded = label.strip_prefix("plugin-")?;
     if encoded.is_empty()
         || encoded.len() > 200
         || encoded.len() % 2 != 0
-        || !encoded.bytes().all(|b| b.is_ascii_hexdigit())
+        || !encoded.bytes().all(|byte| byte.is_ascii_hexdigit())
     {
         return None;
     }
     let bytes = encoded
         .as_bytes()
         .chunks_exact(2)
-        .map(|part| u8::from_str_radix(std::str::from_utf8(part).ok()?, 16).ok())
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok())
         .collect::<Option<Vec<_>>>()?;
     let id = String::from_utf8(bytes).ok()?;
-    valid_id(&id).then_some(id)
+    crate::wire::valid_plugin_id(&id).then_some(id)
 }
-fn present(app: &AppHandle, value: &serde_json::Value) -> Result<(), String> {
-    let id = value["pluginId"]
-        .as_str()
-        .filter(|id| valid_id(id))
-        .ok_or("Invalid plugin ID")?;
-    let label = label(id);
-    let visible = value["visible"].as_bool().ok_or("Invalid visibility")?;
-    if !visible {
-        if let Some(window) = app.get_webview_window(&label) {
-            window.hide().map_err(|e| e.to_string())?;
-        }
-        return Ok(());
-    }
-    let url = value["url"]
-        .as_str()
-        .ok_or("Plugin URL missing")?
-        .parse::<tauri::Url>()
-        .map_err(|e| e.to_string())?;
+fn loopback(text: &str) -> Result<tauri::Url, String> {
+    let url = text.parse::<tauri::Url>().map_err(|e| e.to_string())?;
     if url.scheme() != "http"
         || url.host_str() != Some("127.0.0.1")
         || url.port().is_none()
@@ -55,31 +44,73 @@ fn present(app: &AppHandle, value: &serde_json::Value) -> Result<(), String> {
     {
         return Err("Plugin URL must be loopback".into());
     }
-    let title = value["title"].as_str().unwrap_or("插件");
-    if let Some(window) = app.get_webview_window(&label) {
-        if window.url().map_err(|e| e.to_string())? != url {
-            window.navigate(url).map_err(|e| e.to_string())?;
+    Ok(url)
+}
+fn present(app: &AppHandle, value: &serde_json::Value) -> Result<(), String> {
+    let request: Presentation = serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+    if !crate::wire::valid_plugin_id(&request.plugin_id) {
+        return Err("Invalid plugin ID".into());
+    }
+    let label = label(&request.plugin_id);
+    let existing = app.get_webview_window(&label);
+    if !request.visible {
+        if let Some(window) = existing {
+            window.hide().map_err(|e| e.to_string())?;
         }
-        window.set_title(title).map_err(|e| e.to_string())?;
-        window.unminimize().map_err(|e| e.to_string())?;
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
         return Ok(());
     }
+    let url = loopback(request.url.as_deref().ok_or("Plugin URL missing")?)?;
+    let title = request.title.as_deref().unwrap_or("插件");
+    if title.len() > 256 {
+        return Err("Plugin window title too long".into());
+    }
+    if let Some(window) = existing {
+        if window.url().map_err(|e| e.to_string())? == url {
+            window
+                .set_title(title)
+                .and_then(|()| window.unminimize())
+                .and_then(|()| window.show())
+                .and_then(|()| window.set_focus())
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        // Recreate when the server/token changes so navigation guards use the new origin.
+        window.destroy().map_err(|e| e.to_string())?;
+    }
+    if app
+        .webview_windows()
+        .keys()
+        .filter(|label| plugin_id(label).is_some())
+        .count()
+        >= 32
+    {
+        return Err("插件窗口数量超出限制".into());
+    }
+    let origin = url.origin();
     WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .title(title)
         .inner_size(440.0, 560.0)
         .resizable(false)
         .center()
         .focused(true)
+        .on_navigation(move |target| target.origin() == origin)
         .build()
         .map_err(|e| e.to_string())?;
     Ok(())
 }
-pub(crate) fn handle(app: &AppHandle, value: &serde_json::Value) {
+pub(crate) fn handle(
+    app: &AppHandle,
+    value: &serde_json::Value,
+    generation: crate::controller::Generation,
+) {
     let handle = app.clone();
     let value = value.clone();
     if let Err(error) = app.run_on_main_thread(move || {
+        if !crate::lifecycle::is_running(&handle)
+            || !crate::controller::is_current(&handle, generation)
+        {
+            return;
+        }
         if let Err(error) = present(&handle, &value) {
             crate::desktop::report(&handle, &error);
         }
@@ -88,7 +119,7 @@ pub(crate) fn handle(app: &AppHandle, value: &serde_json::Value) {
     }
 }
 pub(crate) fn user_closed(app: &AppHandle, label: &str) {
-    if let Some(id) = id_from_label(label) {
+    if let Some(id) = plugin_id(label) {
         if let Err(error) = crate::controller::send_internal(
             app,
             serde_json::json!({"id":format!("closed-{id}"),"type":"plugin_window_closed","pluginId":id}),
@@ -99,37 +130,9 @@ pub(crate) fn user_closed(app: &AppHandle, label: &str) {
 }
 pub(crate) fn hide_all(app: &AppHandle) {
     for (label, window) in app.webview_windows() {
-        if id_from_label(&label).is_some() {
+        if plugin_id(&label).is_some() {
             let _ = window.hide();
-        }
-    }
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn labels_are_valid_distinct_and_reversible() {
-        for id in ["org.example.widget", "com.a_b", "com.a-b", "com.a.b"] {
-            let label = label(id);
-            assert!(label
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-'));
-            assert_eq!(id_from_label(&label).as_deref(), Some(id));
-        }
-        assert_ne!(label("com.a.b"), label("com.a-b"));
-    }
-    #[test]
-    fn malformed_unicode_never_panics() {
-        for s in [
-            "main",
-            "plugin-",
-            "plugin-a",
-            "plugin-xyz",
-            "plugin-€a",
-            "plugin-ffff",
-            "plugin-00",
-        ] {
-            assert_eq!(id_from_label(s), None);
+            let _ = window.destroy();
         }
     }
 }

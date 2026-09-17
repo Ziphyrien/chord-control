@@ -1,19 +1,33 @@
-# 分发地址
+# 发布插件
 
-主程序和插件构建时解析当前 GitHub 仓库：优先使用 `CHORD_CONTROL_REPOSITORY`、`GITHUB_REPOSITORY` 或 `GH_REPO`，否则读取 `origin`。`vite.config.ts` 和 `scripts/build-controller.mjs` 将 owner/repo 编译进前端和 sidecar，运行客户机不需要 Git。
+插件发布到自己的 GitHub 仓库后，用户可以通过目录或独立插件地址安装。
 
-默认插件目录：
+## 准备插件
+
+在 `plugins/<名称>/` 放置 `package.json`、`src/worker.ts` 和可选的 UI 页面。清单声明版本、权限、最低主程序版本，以及提供和依赖的服务。可以参照仓库中的系统信息插件。
+
+通过 `sdk/index.ts` 使用主程序提供的能力；插件界面通过 `sdk/ui.ts` 调用自己的服务。依赖关系决定启动顺序，同一个服务应有唯一提供者。
+
+## 配置发布密钥
+
+运行 `bun run keys:generate` 生成 Ed25519 密钥。将私钥保存为仓库 Secret `PLUGIN_SIGNING_PRIVATE_KEY`，将公钥保存到 `config/plugin-public.pem`。已经发布的仓库继续使用现有密钥。
+
+## 发布更新
+
+更新插件版本并推送到 `main`。GitHub Actions 并行执行静态检查和插件构建，通过后发布归档并更新 `plugin-channel`。
+
+分发地址为：
 
 ```text
 https://github.com/<owner>/<repo>/releases/download/plugin-channel/catalog.json
 ```
 
-插件不可变包使用本次发布的 tag；插件目录只在包已经上传后更新。发布工作流会用同一个 `github.repository` 注入地址，因此不会出现构建仓库与下载仓库不一致。
+用户在“设置”中填写目录地址和发布者公钥。单独发布的 `<插件ID>.json` 地址可以用于“添加插件”。
 
-本地更换目标仓库：
+目录、清单和归档经过签名与完整性校验。发布中断时可重跑原工作流；公开的归档持续保留，供已安装版本使用。
 
-```powershell
-$env:CHORD_CONTROL_REPOSITORY = "OWNER/REPO"
-bun run build
-bun run build:sidecar
-```
+## 发布主程序
+
+同步修改 `package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 的版本，并填写对应版本说明。配置 `TAURI_SIGNING_PRIVATE_KEY` 后，推送 `app-v<版本>` 标签。
+
+Windows 构建与静态检查并行执行，发布等待两者通过。正式版本包含安装程序、更新签名、独立运行时、更新元数据和校验文件。

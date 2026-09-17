@@ -1,28 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
-import { createHarness, pluginId } from "./helpers.mjs";
+import { createTransportHarness, fixtureId } from "./transport-harness.mjs";
 
 test(
-  "standalone Windows SEA loads a signed plugin and UI with no node_modules or Node on PATH",
-  { skip: process.platform !== "win32", timeout: 60000 },
+  "cloud-built Windows SEA loads signed plugins without Node or node_modules",
+  {
+    skip: process.platform !== "win32" || !process.env.CHORD_TEST_SEA,
+    timeout: 40000,
+  },
   async (t) => {
-    const h = await createHarness({
-      sea: resolve("src-tauri/binaries/plugin-controller-x86_64-pc-windows-msvc.exe"),
-    });
+    const h = await createTransportHarness({ sea: resolve(process.env.CHORD_TEST_SEA) });
     t.after(() => h.close());
-    await h.buildExample();
+    const release = await h.fixture();
     await h.start();
-    await h.command({
-      type: "add_plugin",
-      manifestUrl: `${h.baseUrl}/manifest.json`,
-      publicKey: h.publicPem,
-    });
+    await h.add(release);
     assert.equal(h.snapshot.plugins[0].running, true);
-    const info = await h.command({ type: "plugin_call", pluginId, method: "info", input: null });
-    assert.equal(info.platform, "win32");
-    const ui = await h.command({ type: "plugin_ui", pluginId });
-    assert.equal((await fetch(ui.url)).status, 200);
+    assert.equal(
+      await h.command({ type: "plugin_call", pluginId: fixtureId, method: "version", input: null }),
+      "1.0.0",
+    );
+    const page = await h.command({ type: "plugin_ui", pluginId: fixtureId });
+    assert.equal((await fetch(page.url)).status, 200);
     await h.stop();
     h.offline = true;
     await h.start();

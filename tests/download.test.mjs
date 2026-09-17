@@ -1,69 +1,96 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { downloadFromSources } from "../controller/src/download-race.ts";
-import { githubSources } from "../controller/src/github-sources.ts";
+import { downloadFromSources } from "../controller/src/infrastructure/downloads.ts";
+import { githubSources } from "../controller/src/infrastructure/github.ts";
+
 const direct = {
   id: "direct",
   url: "https://github.com/example/project/releases/download/v1/plugin.zip",
 };
 const proxy = { id: "proxy", url: "https://proxy.example/plugin.zip" };
-const options = {
-  maxBytes: 1000000,
+const defaults = {
+  maxBytes: 1_000_000,
   probeBytes: 4,
   decode: (bytes) => Buffer.from(bytes).toString(),
-  probeTimeoutMs: 200,
-  timeoutMs: 1000,
+  probeTimeoutMs: 500,
+  timeoutMs: 2000,
 };
-function streamResponse(text, delay, signal, cancelled = () => {}) {
-  let timer;
+
+function delayedBody(text, milliseconds, signal, onCancel = () => {}) {
+  let timer,
+    finished = false;
+  let abort;
+  const clean = () => {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", abort);
+  };
   return new Response(
     new ReadableStream({
       start(controller) {
-        signal.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timer);
-            try {
-              controller.error(new Error("aborted"));
-            } catch {}
-            cancelled();
-          },
-          { once: true },
-        );
+        abort = () => {
+          if (finished) return;
+          finished = true;
+          clean();
+          controller.error(signal.reason);
+          onCancel();
+        };
+        if (signal.aborted) {
+          abort();
+          return;
+        }
+        signal.addEventListener("abort", abort, { once: true });
         timer = setTimeout(() => {
+          if (finished) return;
+          finished = true;
+          clean();
           controller.enqueue(Buffer.from(text));
           controller.close();
-        }, delay);
+        }, milliseconds);
       },
       cancel() {
-        clearTimeout(timer);
-        cancelled();
+        if (!finished) {
+          finished = true;
+          clean();
+          onCancel();
+        }
       },
     }),
     { headers: { "content-type": "application/octet-stream" } },
   );
 }
-test("only public GitHub release and raw URLs are sent through proxies", () => {
-  assert.equal(githubSources(direct.url).length, 4);
-  assert.equal(githubSources("https://raw.githubusercontent.com/a/b/main/catalog.json").length, 4);
+
+test("only public GitHub release and raw routes are eligible for mirror racing", () => {
+  for (const url of [
+    direct.url,
+    "https://github.com/a/b/releases/latest/download/latest.json",
+    "https://raw.githubusercontent.com/a/b/main/catalog.json",
+  ]) {
+    const sources = githubSources(url);
+    assert.equal(sources.length, 4);
+    assert.deepEqual(sources[0], { id: "direct", url });
+    assert.equal(new Set(sources.map((source) => source.id)).size, sources.length);
+  }
   for (const url of [
     "https://example.org/plugin.zip",
     "https://api.github.com/repos/a/b",
-    direct.url + "?token=private",
+    `${direct.url}?token=private`,
+    `${direct.url}#private`,
+    "https://user:secret@github.com/a/b/releases/download/v1/a.zip",
     "https://github.com/login",
     "http://github.com/a/b/releases/download/v1/a.zip",
     "https://github.com.evil.test/a/b/releases/download/v1/a.zip",
   ])
-    assert.equal(githubSources(url).length, 1);
+    assert.deepEqual(githubSources(url), [{ id: "direct", url }]);
 });
-test("races actual body throughput and cancels the slower source", async () => {
+
+test("body throughput selects the winner and cancels the slower stream", async () => {
   let cancelled = 0;
   const result = await downloadFromSources([direct, proxy], {
-    ...options,
+    ...defaults,
     fetcher: async (url, init) =>
-      streamResponse(
+      delayedBody(
         url === direct.url ? "slow" : "fast",
-        url === direct.url ? 100 : 5,
+        url === direct.url ? 100 : 1,
         init.signal,
         () => {
           if (url === direct.url) cancelled++;
@@ -74,18 +101,19 @@ test("races actual body throughput and cancels the slower source", async () => {
   assert.equal(result.source, "proxy");
   assert(cancelled > 0);
 });
-test("invalid signed metadata cannot win against slower valid content", async () => {
+
+test("fast untrusted metadata cannot beat slower content accepted by the verifier", async () => {
   const result = await downloadFromSources([proxy, direct], {
-    ...options,
+    ...defaults,
     probeBytes: 100,
     fetcher: async (url, init) =>
-      streamResponse(
-        url === proxy.url ? '{"valid":false}' : '{"valid":true}',
-        url === proxy.url ? 1 : 15,
+      delayedBody(
+        JSON.stringify({ valid: url === direct.url }),
+        url === proxy.url ? 1 : 20,
         init.signal,
       ),
     decode(bytes) {
-      const value = JSON.parse(Buffer.from(bytes).toString());
+      const value = JSON.parse(Buffer.from(bytes));
       if (!value.valid) throw new Error("signature rejected");
       return value;
     },
@@ -93,14 +121,15 @@ test("invalid signed metadata cannot win against slower valid content", async ()
   assert.equal(result.source, "direct");
   assert.equal(result.value.valid, true);
 });
-test("a corrupt winning download falls back and restarts another source", async () => {
+
+test("a corrupt body after a valid probe restarts a cancelled alternative", async () => {
   let directCalls = 0;
   const result = await downloadFromSources([proxy, direct], {
-    ...options,
+    ...defaults,
     fetcher: async (url, init) => {
       if (url === direct.url) {
         directCalls++;
-        return streamResponse("good-body", 30, init.signal);
+        return delayedBody("verified-body", 40, init.signal);
       }
       let timer;
       return new Response(
@@ -120,21 +149,22 @@ test("a corrupt winning download falls back and restarts another source", async 
     },
     decode(bytes) {
       const value = Buffer.from(bytes).toString();
-      if (value !== "good-body") throw new Error("SHA-256 mismatch");
+      if (value !== "verified-body") throw new Error("SHA-256 mismatch");
       return value;
     },
   });
-  assert.equal(result.value, "good-body");
+  assert.equal(result.value, "verified-body");
   assert.equal(directCalls, 2);
 });
-test("ETags stay with their original source and unsolicited 304 cannot win", async () => {
+
+test("ETags belong to one route and a 304 requires cached verified content", async () => {
   const first = await downloadFromSources([proxy], {
-    ...options,
+    ...defaults,
     fetcher: async () => new Response("valid", { headers: { etag: '"proxy-tag"' } }),
   });
   const seen = new Map();
   const result = await downloadFromSources([direct, proxy], {
-    ...options,
+    ...defaults,
     cached: first.value,
     etag: first.etag,
     fetcher: async (url, init) => {
@@ -146,33 +176,79 @@ test("ETags stay with their original source and unsolicited 304 cannot win", asy
   assert.equal(result.source, "proxy");
   assert.equal(seen.get(direct.url), undefined);
   assert.equal(seen.get(proxy.url), '"proxy-tag"');
-});
-test("oversized or HTML proxy responses fall back, and all timeouts reject", async () => {
-  const result = await downloadFromSources([proxy, direct], {
-    ...options,
-    fetcher: async (url) =>
-      url === proxy.url
-        ? new Response("error", { headers: { "content-type": "text/html" } })
-        : new Response("valid"),
-  });
-  assert.equal(result.source, "direct");
   await assert.rejects(
-    downloadFromSources([direct], {
-      ...options,
-      probeTimeoutMs: 15,
-      fetcher: async (_url, init) =>
-        new Promise((_resolve, reject) =>
-          init.signal.addEventListener("abort", () => reject(new Error("timeout"))),
-        ),
+    downloadFromSources([proxy], {
+      ...defaults,
+      etag: first.etag,
+      fetcher: async () => new Response(null, { status: 304 }),
     }),
-    /timeout/,
+    /304/,
   );
+});
+
+test("HTML, oversized declared bodies, and oversized streamed bodies cannot win", async () => {
+  for (const headers of [{ "content-type": "text/html" }, { "content-length": "1000001" }]) {
+    const result = await downloadFromSources([proxy, direct], {
+      ...defaults,
+      fetcher: async (url) =>
+        url === proxy.url ? new Response("bad", { headers }) : new Response("valid"),
+    });
+    assert.equal(result.source, "direct");
+  }
   await assert.rejects(
     downloadFromSources([direct], {
-      ...options,
+      ...defaults,
       maxBytes: 2,
       fetcher: async () => new Response("large"),
     }),
     /大小限制/,
   );
+});
+
+test("probe timeout rejects and caller cancellation stops every active transfer", async () => {
+  const pending = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      if (init.signal.aborted) reject(init.signal.reason);
+      else init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+    });
+  await assert.rejects(
+    downloadFromSources([direct], { ...defaults, probeTimeoutMs: 10, fetcher: pending }),
+    /超时/,
+  );
+  const controller = new AbortController();
+  let aborted = 0;
+  const result = downloadFromSources([direct, proxy], {
+    ...defaults,
+    signal: controller.signal,
+    fetcher: async (url, init) => {
+      init.signal.addEventListener(
+        "abort",
+        () => {
+          aborted++;
+        },
+        { once: true },
+      );
+      return pending(url, init);
+    },
+  });
+  controller.abort(new Error("caller cancelled"));
+  await assert.rejects(result, /caller cancelled/);
+  assert.equal(aborted, 2);
+});
+
+test("already cancelled and empty-source requests fail without a network call", async () => {
+  let calls = 0;
+  await assert.rejects(
+    downloadFromSources([direct], {
+      ...defaults,
+      signal: AbortSignal.abort(new Error("stopped")),
+      fetcher: async () => {
+        calls++;
+        return new Response("bad");
+      },
+    }),
+    /stopped/,
+  );
+  assert.equal(calls, 0);
+  await assert.rejects(downloadFromSources([], defaults), /没有可用来源/);
 });

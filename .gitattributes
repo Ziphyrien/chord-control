@@ -1,18 +1,16 @@
-# Default to LF for text files across the repo
+# Reproducible text checkouts across Windows and Unix hosts.
 * text=auto eol=lf
-
-# Windows scripts should keep CRLF
 *.bat text eol=crlf
 *.cmd text eol=crlf
-*.ps1 text eol=crlf
-
-# Shell scripts should keep LF
-*.sh text eol=lf
-
-# SVG remains text for readable diffs
+*.ps1 text eol=lf
 *.svg text eol=lf
+bun.lock text eol=lf
+*.pem text eol=lf
 
-# Common binary assets
+# Never normalize signed artifacts or opaque assets.
+*.exe binary
+*.dll binary
+*.sig binary
 *.avif binary
 *.bmp binary
 *.png binary

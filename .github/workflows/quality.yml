@@ -1,0 +1,35 @@
+name: Static checks
+on:
+  workflow_call:
+    inputs:
+      rust:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CHORD_CONTROL_REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "26"
+          package-manager-cache: false
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run lint
+      - run: bun run format:check
+      - run: bun run check
+      - run: bun run knip
+      - uses: dtolnay/rust-toolchain@stable
+        if: inputs.rust
+        with:
+          components: rustfmt
+      - run: bun run format:rust:check
+        if: inputs.rust

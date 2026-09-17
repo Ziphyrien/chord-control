@@ -1,4 +1,8 @@
+//! Signed host updates. Downloads finish before peers or plugins are stopped.
 use std::{
+    fs,
+    io::Write,
+    path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
@@ -7,18 +11,73 @@ use tauri_plugin_updater::UpdaterExt;
 #[derive(Default)]
 pub(crate) struct UpdateState {
     busy: AtomicBool,
+    staging_failed: AtomicBool,
+}
+
+#[cfg(windows)]
+fn stage(app: &AppHandle, bytes: &[u8]) -> Result<PathBuf, String> {
+    // Our release contract is Tauri's signed NSIS .exe artifact. Reject archives or
+    // unexpected payloads rather than invoking a shell/file association to interpret them.
+    let offset = bytes
+        .get(0x3c..0x40)
+        .and_then(|value| <[u8; 4]>::try_from(value).ok())
+        .map(u32::from_le_bytes)
+        .map(|value| value as usize)
+        .ok_or("Invalid installer header")?;
+    if !bytes.starts_with(b"MZ")
+        || bytes.get(offset..offset.saturating_add(4)) != Some(b"PE\0\0".as_slice())
+    {
+        return Err("更新必须是已签名的 Windows NSIS 可执行文件".into());
+    }
+    let id = unsafe { windows::Win32::System::Com::CoCreateGuid() }.map_err(|e| e.to_string())?;
+    let directory = crate::desktop::data_dir(app)?
+        .join("updates")
+        .join(format!("{id:?}"));
+    fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+    let path = directory.join("install.exe");
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    file.write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|e| e.to_string())?;
+    Ok(path)
+}
+#[cfg(not(windows))]
+fn stage(_app: &AppHandle, _bytes: &[u8]) -> Result<PathBuf, String> {
+    Err("主程序更新仅支持 Windows".into())
+}
+
+fn launch_installer(path: &std::path::Path) -> Result<(), String> {
+    // Command uses CreateProcessW on Windows: current user's token, no COM, no runas,
+    // no arbitrary wait on an Explorer ShellExecute call. The installer starts a fresh
+    // hidden session after replacement; original process arguments are never replayed.
+    let mut command = std::process::Command::new(path);
+    command
+        .args(["/P", "/UPDATE"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+    }
+    command.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 async fn check(app: &AppHandle, install: bool) -> Result<(), String> {
-    let handle = app.clone();
     let updater = app
         .updater_builder()
         .timeout(Duration::from_secs(90))
-        .restart_after_install(false)
-        .installer_args(["/R"])
-        .on_before_exit(move || crate::controller::prepare_update(&handle))
         .build()
         .map_err(|e| e.to_string())?;
-    let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
+    let update = tokio::time::timeout(Duration::from_secs(95), updater.check())
+        .await
+        .map_err(|_| "检查更新超时".to_owned())?
+        .map_err(|e| e.to_string())?;
+    let Some(update) = update else {
         if install {
             if let Some(tray) = app.tray_by_id("controller") {
                 let _ = tray.set_tooltip(Some("Chord Control — 已是最新版本"));
@@ -35,51 +94,74 @@ async fn check(app: &AppHandle, install: bool) -> Result<(), String> {
         }
         return Ok(());
     }
-    // download() checks the embedded public key before any process is stopped.
-    let bytes = update
-        .download(|_, _| {}, || {})
+    // tauri-plugin-updater verifies the unchanged embedded Minisign public key here.
+    let bytes = tokio::time::timeout(Duration::from_secs(180), update.download(|_, _| {}, || {}))
         .await
+        .map_err(|_| "下载更新超时".to_owned())?
         .map_err(|e| e.to_string())?;
-    if !app
-        .state::<crate::desktop::DesktopState>()
-        .unlocked
-        .load(Ordering::SeqCst)
+    if !crate::lifecycle::is_running(app)
+        || !app.state::<crate::desktop::DesktopState>().is_unlocked()
     {
         return Err("控制中心已锁定，请重新解锁后安装更新".into());
     }
     let handle = app.clone();
+    let staging = tauri::async_runtime::spawn_blocking(move || stage(&handle, &bytes));
+    let path = match tokio::time::timeout(Duration::from_secs(30), staging).await {
+        Ok(result) => result.map_err(|e| e.to_string())??,
+        Err(_) => {
+            // At most one detached filesystem task; it only writes bytes, never launches.
+            app.state::<UpdateState>()
+                .staging_failed
+                .store(true, Ordering::Release);
+            return Err("写入更新超时，请重新启动主程序后重试".into());
+        }
+    };
+    if !crate::lifecycle::is_running(app)
+        || !app.state::<crate::desktop::DesktopState>().is_unlocked()
+    {
+        let _ = fs::remove_file(&path);
+        return Err("控制中心已锁定，更新已取消".into());
+    }
+    let handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        update.install(bytes).map_err(|error| {
-            // Restore service if extraction or installer launch fails.
-            crate::controller::resume_after_update(&handle);
-            error.to_string()
-        })
+        let result =
+            crate::lifecycle::prepare_update(&handle).and_then(|()| launch_installer(&path));
+        match result {
+            Ok(()) => crate::lifecycle::update_launched(&handle),
+            Err(error) => {
+                let _ = fs::remove_file(path);
+                crate::lifecycle::update_failed(&handle);
+                return Err(error);
+            }
+        }
+        Ok(())
     })
     .await
     .map_err(|e| e.to_string())?
 }
 fn run(app: &AppHandle, install: bool) {
-    if app.state::<UpdateState>().busy.swap(true, Ordering::SeqCst) {
+    let state = app.state::<UpdateState>();
+    if !crate::lifecycle::is_running(app)
+        || state.staging_failed.load(Ordering::Acquire)
+        || state.busy.swap(true, Ordering::AcqRel)
+    {
         return;
     }
-    let app = app.clone();
+    let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = check(&app, install).await {
-            crate::desktop::report(&app, &format!("主程序更新: {error}"));
+        if let Err(error) = check(&handle, install).await {
+            crate::desktop::report(&handle, &format!("主程序更新: {error}"));
         }
-        app.state::<UpdateState>()
+        handle
+            .state::<UpdateState>()
             .busy
-            .store(false, Ordering::SeqCst);
+            .store(false, Ordering::Release);
     });
 }
 pub(crate) fn request(app: &AppHandle) {
-    if !app
-        .state::<crate::desktop::DesktopState>()
-        .unlocked
-        .load(Ordering::SeqCst)
-    {
+    if !app.state::<crate::desktop::DesktopState>().is_unlocked() {
         crate::desktop::report(app, "请先打开并解锁控制中心，再安装主程序更新");
-        crate::desktop::request_action(app, "open");
+        crate::desktop::request_action(app, crate::desktop::Action::Open);
         return;
     }
     run(app, true);
@@ -88,11 +170,11 @@ pub(crate) fn start(app: &AppHandle) {
     if cfg!(debug_assertions) {
         return;
     }
-    let app = app.clone();
+    let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(60)).await;
-        loop {
-            run(&app, false);
+        while crate::lifecycle::is_running(&handle) {
+            run(&handle, false);
             tokio::time::sleep(Duration::from_secs(6 * 60 * 60)).await;
         }
     });

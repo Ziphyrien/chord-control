@@ -1,28 +1,47 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { setTimeout as delay } from "node:timers/promises";
-import { createHarness } from "./helpers.mjs";
+import { setImmediate } from "node:timers/promises";
+import { ControllerApplication } from "../controller/src/application/controller.ts";
+import { ActivityLog } from "../controller/src/application/execution.ts";
+import { applicationFixture, manifest, registration } from "./helpers.mjs";
 
-test("scheduled poll installs an update without a check command", { timeout: 80000 }, async (t) => {
-  const h = await createHarness();
-  t.after(() => h.close());
-  const first = await h.buildFixture("1.0.0");
-  await h.start();
-  await h.command({
-    type: "add_plugin",
-    manifestUrl: `${h.baseUrl}/manifest.json`,
-    publicKey: h.publicPem,
+test("scheduled poll updates plugins, reschedules after completion, and stops cleanly", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const h = await applicationFixture([registration(manifest("scheduled.plugin"))]),
+    events = [];
+  const app = new ControllerApplication({
+    plugins: h.service,
+    runtime: h.runtime,
+    gate: h.gate,
+    activity: new ActivityLog(),
+    dataDir: "fixture",
+    openUi: async () => null,
+    emit: (event) => events.push(event),
   });
-  await h.command({
-    type: "set_settings",
-    settings: { checkIntervalMinutes: 1, autoUpdate: true, catalogUrl: "", catalogPublicKey: "" },
+  t.after(async () => {
+    app.stop();
+    await h.service.close();
   });
-  await h.buildFixture("2.0.0");
-  const deadline = Date.now() + 72000;
-  while (Date.now() < deadline && h.snapshot.plugins[0]?.version !== "2.0.0") await delay(200);
-  assert.equal(h.snapshot.plugins[0].version, "2.0.0");
-  assert.equal(
-    await h.command({ type: "plugin_call", pluginId: first.id, method: "version", input: null }),
-    "2.0.0",
+  h.catalog = {
+    format: 1,
+    plugins: [manifest("scheduled.plugin", { version: "2.0.0", artifactSha256: "b".repeat(64) })],
+  };
+  app.start();
+  t.mock.timers.tick(30 * 60_000);
+  await setImmediate();
+  assert.equal(h.service.summaries()[0].version, "2.0.0");
+  assert(
+    events.some(
+      (event) => event.type === "snapshot" && event.snapshot.plugins[0]?.version === "2.0.0",
+    ),
   );
+  const checks = () => h.events.filter((event) => event[0] === "检查完成").length;
+  assert.equal(checks(), 1);
+  t.mock.timers.tick(30 * 60_000);
+  await setImmediate();
+  assert.equal(checks(), 2);
+  app.stop();
+  t.mock.timers.tick(60 * 60_000);
+  await setImmediate();
+  assert.equal(checks(), 2);
 });

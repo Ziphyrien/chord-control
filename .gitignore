@@ -1,21 +1,29 @@
+# Installed packages and generated application output
 node_modules/
 build/
 dist/
 release/
-.local/
-.pi/
 .svelte-kit/
 .svelte-check/
-playwright-report/
-test-results/
 .vite/
-*.log
-*.tmp
-src-tauri/target/
-src-tauri/gen/
-src-tauri/binaries/*.exe
-!src-tauri/binaries/.gitkeep
+
+# Machine-local work, credentials, and diagnostics
+.local/
+.pi/
 .env
 .env.*
 !.env.example
+*.log
+*.tmp
 .DS_Store
+Thumbs.db
+
+# Browser test output (browsers are installed explicitly by developers)
+playwright-report/
+test-results/
+
+# Native generated output; retain the authored binary placeholder
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep

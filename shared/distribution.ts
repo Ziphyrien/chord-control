@@ -1,9 +1,15 @@
 declare const __CHORD_CONTROL_REPOSITORY__: string;
 declare const __CHORD_CONTROL_CATALOG_PUBLIC_KEY__: string;
 
-const inTestHarness = typeof process !== "undefined" && process.env?.CHORD_CONTROL_TEST === "1";
-const distributionRepository = inTestHarness ? "" : __CHORD_CONTROL_REPOSITORY__;
-export const defaultCatalogUrl = distributionRepository
-  ? `https://github.com/${distributionRepository}/releases/download/plugin-channel/catalog.json`
+const testing = typeof process !== "undefined" && process.env?.CHORD_CONTROL_TEST === "1";
+const repository =
+  !testing && typeof __CHORD_CONTROL_REPOSITORY__ !== "undefined"
+    ? __CHORD_CONTROL_REPOSITORY__
+    : "";
+export const defaultCatalogUrl = repository
+  ? `https://github.com/${repository}/releases/download/plugin-channel/catalog.json`
   : "";
-export const defaultCatalogPublicKey = inTestHarness ? "" : __CHORD_CONTROL_CATALOG_PUBLIC_KEY__;
+export const defaultCatalogPublicKey =
+  !testing && typeof __CHORD_CONTROL_CATALOG_PUBLIC_KEY__ !== "undefined"
+    ? __CHORD_CONTROL_CATALOG_PUBLIC_KEY__
+    : "";
