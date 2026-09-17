@@ -96,7 +96,7 @@ pub(crate) fn send_internal(app: &AppHandle, value: Value) -> Result<(), String>
         &value,
     )
 }
-pub(crate) fn send_native_response(
+pub(crate) fn send_generation(
     app: &AppHandle,
     generation: Generation,
     value: Value,

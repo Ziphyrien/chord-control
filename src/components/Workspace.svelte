@@ -61,7 +61,7 @@
         >
       {/each}
     </nav>
-    <div class="connection">
+    <div class="connection" role="status">
       <span class={["connection-dot", model.connection]} aria-hidden="true"
       ></span>{model.connection === "online"
         ? "已连接"

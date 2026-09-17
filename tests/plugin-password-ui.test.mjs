@@ -1,4 +1,4 @@
-import test from "node:test";
+import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import { PadSession } from "../plugins/password-pad/ui/session.ts";
@@ -30,7 +30,7 @@ function fixture(t) {
     },
     (state) => states.push(state),
   );
-  t.after(() => session.pause());
+  t.onTestFinished(() => session.pause());
   session.start();
   return {
     session,

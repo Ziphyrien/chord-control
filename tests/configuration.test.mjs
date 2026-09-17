@@ -1,4 +1,4 @@
-import test from "node:test";
+import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -42,7 +42,7 @@ test("v0.2 configuration migrates installed and paused plugins, publisher pin an
 });
 test("corrupt and unsupported configuration is never silently overwritten", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "chord-config-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.onTestFinished(() => rm(root, { recursive: true, force: true }));
   const store = new ConfigStore(root),
     path = join(root, "config.json");
   for (const content of ["broken JSON", JSON.stringify({ format: 99, plugins: [] })]) {
@@ -53,7 +53,7 @@ test("corrupt and unsupported configuration is never silently overwritten", asyn
 });
 test("durable config snapshots are isolated and failed validation cannot mutate saved state", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "chord-config-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.onTestFinished(() => rm(root, { recursive: true, force: true }));
   const store = new ConfigStore(root);
   await store.load();
   const initial = store.snapshot(),

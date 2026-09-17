@@ -1,6 +1,6 @@
 {
   "name": "chord-control",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Windows control center for Chord plugins",
   "workspaces": [
@@ -8,14 +8,14 @@
   ],
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 1420",
-    "build": "vite build",
-    "check": "svelte-check --tsconfig ./tsconfig.json --tsgo",
-    "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit",
-    "lint": "oxlint --ignore-path .gitignore --deny-warnings .",
-    "lint:fix": "oxlint --ignore-path .gitignore --deny-warnings --fix .",
-    "format": "oxfmt --write .",
-    "format:check": "oxfmt --check .",
+    "dev": "vp dev",
+    "build": "vp build",
+    "check": "vp check && vp run check:svelte",
+    "typecheck": "vp check --no-fmt --no-lint && vp run check:svelte",
+    "lint": "vp lint",
+    "lint:fix": "vp lint --fix",
+    "format": "vp fmt",
+    "format:check": "vp fmt --check",
     "format:rust:check": "cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check",
     "knip": "knip --reporter compact",
     "tauri": "tauri",
@@ -29,12 +29,13 @@
     "app:prepare": "node scripts/prepare-app-release.mjs",
     "app:publish": "node scripts/publish-app.mjs",
     "keys:generate": "node scripts/generate-key.mjs",
-    "test": "node --test tests/*.test.mjs src/lib/frontend.test.ts",
-    "test:distribution": "node --test tests/distribution.test.mjs tests/download.test.mjs",
-    "test:sea": "node --test tests/sea.test.mjs",
+    "test": "vp test",
+    "test:distribution": "vp test tests/distribution.test.mjs tests/download.test.mjs",
+    "test:sea": "vp test tests/sea.test.mjs",
     "test:ui": "playwright test",
-    "test:periodic": "node --test tests/periodic.test.mjs",
-    "test:architecture": "node --test tests/architecture.test.mjs"
+    "test:periodic": "vp test tests/periodic.test.mjs",
+    "test:architecture": "vp test tests/architecture.test.mjs",
+    "check:svelte": "svelte-check --tsconfig ./tsconfig.json --tsgo"
   },
   "dependencies": {
     "@earendil-works/chord": "0.85.1",
@@ -52,15 +53,22 @@
     "@typescript/native": "npm:typescript@7",
     "esbuild": "^0.28.2",
     "knip": "6.35.1",
-    "oxfmt": "^0.68.0",
-    "oxlint": "^1.83.0",
     "svelte-check": "^4.7.6",
     "typescript": "~6",
-    "vite": "^8.3.0"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "overrides": {
+    "vite": "catalog:",
+    "vitest": "4.1.11"
   },
   "engines": {
     "bun": ">=1.4.0",
     "node": ">=26.0.0"
   },
-  "packageManager": "bun@1.4.2"
+  "packageManager": "bun@1.4.2",
+  "catalog": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.2",
+    "vite-plus": "0.3.2"
+  }
 }

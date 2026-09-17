@@ -1,6 +1,6 @@
 {
   "name": "com.chord.study-guard",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "浏览器启动验证与 Windows 默认壁纸保护，保留原有设置以便恢复",
   "type": "module",

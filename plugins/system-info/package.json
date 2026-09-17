@@ -1,6 +1,6 @@
 {
   "name": "com.example.system-info",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "查看本机系统状态并保存本地便笺",
   "type": "module",

@@ -1,4 +1,4 @@
-import test from "node:test";
+import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -84,7 +84,7 @@ test("generic guard hooks authorize desktop/settings and affected protected plug
 
 async function notesFixture(t) {
   const directory = await mkdtemp(join(tmpdir(), "chord-notes-test-"));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => rm(directory, { recursive: true, force: true }));
   return { directory, notes: new Notes(directory) };
 }
 test("notes preserve plain text, order writes, and reject invalid writes without data loss", async (t) => {

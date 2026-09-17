@@ -4,7 +4,7 @@ Windows 托盘工具，集中管理插件、自动同步更新，并提供密保
 
 ## 安装与打开
 
-1. 从 [最新版本](https://github.com/Ziphyrien/chord-control/releases/latest) 下载 `Chord.Control-setup.exe` 并安装。
+1. [下载安装程序](https://github.com/Ziphyrien/chord-control/releases/latest/download/Chord.Control-setup.exe)并安装。安装完成后自动启动到系统托盘。
 2. 在系统托盘中打开 Chord Control。
 3. 首次启动会同步内置插件，后续定期检查更新。
 
@@ -30,4 +30,4 @@ Windows 托盘工具，集中管理插件、自动同步更新，并提供密保
 
 每日密码是“月份与日期之和 + 星期英文首字母”。例如 3 月 15 日星期一为 `18M`。一次验证有效期为 120 秒，可尝试 5 次，最多输入 32 个字符。
 
-[问题处理](docs/maintenance.md) · [发布插件](docs/distribution.md) · [版本说明](docs/releases/0.3.0.md)
+[问题处理](docs/maintenance.md) · [发布插件](docs/distribution.md) · [开发](docs/development.md) · [版本说明](docs/releases/0.3.1.md)

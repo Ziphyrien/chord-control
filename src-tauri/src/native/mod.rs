@@ -74,7 +74,7 @@ fn reply(app: &AppHandle, generation: Generation, id: &str, result: Result<Value
         Ok(result) => json!({"type":"native_response","id":id,"ok":true,"result":result}),
         Err(message) => json!({"type":"native_response","id":id,"ok":false,"message":message}),
     };
-    if let Err(error) = crate::controller::send_native_response(app, generation, value) {
+    if let Err(error) = crate::controller::send_generation(app, generation, value) {
         eprintln!("Native reply discarded: {error}");
     }
 }

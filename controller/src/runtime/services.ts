@@ -43,8 +43,8 @@ export class ServiceDirectory {
         return createRemoteServiceBinding({
           services: options.services,
           bound: true,
-          assertAccess: options.assertAccess,
-          onError: options.onError,
+          assertAccess: () => options.assertAccess(),
+          onError: (error) => options.onError(error),
           transport: {
             invoke: (call, context) =>
               provider(call.serviceId).invoke(call, withContextValue(PluginCaller, owner, context)),

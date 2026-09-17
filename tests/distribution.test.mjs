@@ -1,4 +1,4 @@
-import test from "node:test";
+import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -35,7 +35,7 @@ import { signingBytes, verifySigned } from "../shared/signing.ts";
 
 async function temporary(t) {
   const root = await mkdtemp(join(tmpdir(), "chord-distribution-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.onTestFinished(() => rm(root, { recursive: true, force: true }));
   return root;
 }
 function keys() {
@@ -157,7 +157,7 @@ test("repository identity accepts supported GitHub forms and rejects ambiguous o
   ])
     assert.equal(parseRepositorySlug(value), undefined, value);
   const previous = process.env.CHORD_CONTROL_REPOSITORY;
-  t.after(() => {
+  t.onTestFinished(() => {
     if (previous === undefined) delete process.env.CHORD_CONTROL_REPOSITORY;
     else process.env.CHORD_CONTROL_REPOSITORY = previous;
   });

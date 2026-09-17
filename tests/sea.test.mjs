@@ -1,4 +1,4 @@
-import test from "node:test";
+import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { createTransportHarness, fixtureId } from "./transport-harness.mjs";
@@ -11,7 +11,7 @@ test(
   },
   async (t) => {
     const h = await createTransportHarness({ sea: resolve(process.env.CHORD_TEST_SEA) });
-    t.after(() => h.close());
+    t.onTestFinished(() => h.close());
     const release = await h.fixture();
     await h.start();
     await h.add(release);

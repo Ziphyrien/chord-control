@@ -38,14 +38,15 @@ async function refreshInfo(): Promise<void> {
       const detail = document.createElement("dd");
       term.textContent = label;
       const item = value[key];
+      const text = typeof item === "string" || typeof item === "number" ? String(item) : "—";
       detail.textContent =
-        key === "memoryGiB"
+        typeof item === "number" && key === "memoryGiB"
           ? `${item} GB`
-          : key === "uptimeMinutes"
+          : typeof item === "number" && key === "uptimeMinutes"
             ? `${item} 分钟`
             : item === "win32"
               ? "Windows"
-              : String(item ?? "—");
+              : text;
       fragment.append(term, detail);
     }
     info.replaceChildren(fragment);

@@ -25,26 +25,23 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: oven-sh/setup-bun@v2.2.0
+      - uses: voidzero-dev/setup-vp@v1.20.0
         with:
-          bun-version-file: package.json
-      - uses: actions/setup-node@v7.0.0
-        with:
-          node-version: "26"
-          architecture: x64
-          package-manager-cache: false
+          node-version-file: .node-version
+          cache: true
+          run-install: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2.9.2
         with:
           workspaces: src-tauri
           cache-on-failure: true
-      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: vp install --frozen-lockfile --ignore-scripts
       - name: Build Windows installer
         if: ${{ !startsWith(github.ref, 'refs/tags/app-v') }}
-        run: bun run build:windows
+        run: vp exec tauri build --ci
       - name: Build signed Windows installer
         if: startsWith(github.ref, 'refs/tags/app-v')
-        run: bun run tauri build --ci --config src-tauri/tauri.release.conf.json
+        run: vp exec tauri build --ci --config src-tauri/tauri.release.conf.json
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
@@ -73,14 +70,12 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: oven-sh/setup-bun@v2.2.0
+      - uses: voidzero-dev/setup-vp@v1.20.0
         with:
-          bun-version-file: package.json
-      - uses: actions/setup-node@v7.0.0
-        with:
-          node-version: "26"
-          package-manager-cache: false
-      - run: bun install --frozen-lockfile --ignore-scripts
+          node-version-file: .node-version
+          cache: true
+          run-install: false
+      - run: vp install --frozen-lockfile --ignore-scripts
       - uses: actions/download-artifact@v8
         with:
           name: chord-control-windows-x64
@@ -88,6 +83,6 @@ jobs:
       - name: Set release timestamp
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
       - name: Verify and publish Windows release
-        run: bun run app:publish
+        run: vp node scripts/publish-app.mjs
         env:
           GH_TOKEN: ${{ github.token }}

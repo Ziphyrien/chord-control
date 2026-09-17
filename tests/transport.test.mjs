@@ -1,4 +1,4 @@
-import test from "node:test";
+import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { createTransportHarness, fixtureId } from "./transport-harness.mjs";
 
@@ -7,7 +7,7 @@ test(
   { timeout: 40000 },
   async (t) => {
     const h = await createTransportHarness();
-    t.after(() => h.close());
+    t.onTestFinished(() => h.close());
     const release = await h.fixture("1.0.0", { native: true, cleanup: true });
     await h.start();
     await h.add(release);
@@ -43,7 +43,7 @@ test(
   { timeout: 40000 },
   async (t) => {
     const h = await createTransportHarness();
-    t.after(() => h.close());
+    t.onTestFinished(() => h.close());
     await h.start();
     await h.add(await h.fixture());
     const old = await h.command({ type: "plugin_ui", pluginId: fixtureId });
@@ -65,7 +65,7 @@ test(
   { timeout: 40000 },
   async (t) => {
     const h = await createTransportHarness();
-    t.after(() => h.close());
+    t.onTestFinished(() => h.close());
     const provider = await h.fixture("1.0.0", { id: "com.test.provider", provideService: true });
     const consumer = await h.fixture("1.0.0", {
       id: "com.test.consumer",

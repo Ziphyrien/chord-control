@@ -1,4 +1,4 @@
-import test from "node:test";
+import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
@@ -18,7 +18,7 @@ const key = (entry) => `${entry.path}|${entry.name}`;
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "chord-policy-test-"));
   const systemRoot = join(root, "Windows");
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.onTestFinished(() => rm(root, { recursive: true, force: true }));
   const stock = join(systemRoot, "Web", "Wallpaper", "Windows", "img0.jpg");
   await mkdir(join(stock, ".."), { recursive: true });
   await writeFile(stock, "fixture only");
@@ -29,6 +29,7 @@ async function fixture(t) {
     wallpaper: originalWallpaper,
     values: new Map(),
     calls: [],
+    /** @type {(operation: string, input: unknown, phase: string) => void | Promise<void>} */
     fault: () => {},
   };
   h.backup = join(data, "wallpaper-native-backup.json");

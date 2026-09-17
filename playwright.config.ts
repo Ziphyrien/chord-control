@@ -21,7 +21,7 @@ export default defineConfig({
   webServer: externalUrl
     ? undefined
     : {
-        command: "bun run dev",
+        command: "vp dev",
         url: "http://127.0.0.1:1420",
         reuseExistingServer: !process.env.CI,
         timeout: 30_000,

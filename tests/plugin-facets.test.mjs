@@ -1,4 +1,4 @@
-import test from "node:test";
+import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -40,7 +40,7 @@ async function hostFixture(t, facets) {
       ...facets,
     ],
   });
-  t.after(async () => {
+  t.onTestFinished(async () => {
     await host.dispose();
     await rm(directory, { recursive: true, force: true });
   });
@@ -60,7 +60,7 @@ test("real Chord password service registers stable IDs, approves once, and rejec
   assert(host.services.catalogue.some((entry) => entry.serviceId === "study.password.v1"));
   const approved = host.services.use(PasswordPrompt).authorize("打开程序", BACKGROUND_CONTEXT);
   const view = await call(host, "challenge");
-  const sequence = [...passwordFor(new Date())].map((letter) => view.cells.indexOf(letter));
+  const sequence = Array.from(passwordFor(new Date())).map((letter) => view.cells.indexOf(letter));
   sequence.push(view.cells.indexOf("＃"));
   assert.deepEqual(await call(host, "submit", { id: view.id, revision: view.revision, sequence }), {
     approved: true,

@@ -99,11 +99,20 @@ select {
   transform: translateX(18px);
 }
 
-input[type="checkbox"] {
+.checkbox-control {
+  display: inline-grid;
+  place-items: center;
   width: 19px;
   height: 19px;
-  accent-color: var(--accent);
+  min-height: 19px;
+  padding: 0;
   flex-shrink: 0;
+  border-radius: 3px;
+}
+.checkbox-control[data-state="checked"] {
+  color: #152010;
+  background: var(--accent);
+  border-color: var(--accent);
 }
 textarea {
   resize: vertical;

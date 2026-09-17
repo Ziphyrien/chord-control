@@ -35,6 +35,7 @@ pub fn run() -> Result<(), String> {
         .manage(desktop::DesktopState::default())
         .manage(lifecycle::Lifecycle::default())
         .manage(native::NativeState::default())
+        .manage(plugin_windows::WindowState::default())
         .manage(updater::UpdateState::default())
         .invoke_handler(tauri::generate_handler![
             controller::controller_command,

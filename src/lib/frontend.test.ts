@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { setImmediate as tick } from "node:timers/promises";
-import { test, type TestContext } from "node:test";
+import { test, type TestContext } from "vite-plus/test";
 import type {
   ControllerCommand,
   ControllerEvent,
@@ -87,7 +87,7 @@ async function sessionHarness(t: TestContext, desktop: DesktopAdapter = browserD
     desktop,
   );
   const stop = session.start();
-  t.after(stop);
+  t.onTestFinished(stop);
   await tick();
   return {
     session,
@@ -127,7 +127,7 @@ async function clientHarness(t: TestContext, timeout = 1_000) {
     timeout,
   );
   const stop = await client.connect((event) => events.push(event));
-  t.after(stop);
+  t.onTestFinished(stop);
   await tick();
   return {
     client,
@@ -277,7 +277,7 @@ test("a late transport subscription cleans itself up after a newer connection", 
   const oldEvents: ControllerEvent[] = [];
   const first = client.connect((event) => oldEvents.push(event));
   const stop = await client.connect(() => {});
-  t.after(stop);
+  t.onTestFinished(stop);
   subscription.resolve(() => {
     disposed++;
   });

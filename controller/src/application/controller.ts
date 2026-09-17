@@ -16,7 +16,7 @@ interface Dependencies {
   gate: Enqueue;
   activity: ActivityLog;
   dataDir: string;
-  openUi(id: string): Promise<Json>;
+  openUi: (id: string) => Promise<Json>;
   emit(event: ControllerEvent): void;
 }
 /** App command semantics and scheduling. Authorization never holds the plugin execution gate. */

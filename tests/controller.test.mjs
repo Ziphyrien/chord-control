@@ -1,4 +1,4 @@
-import test from "node:test";
+import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { applicationFixture, manifest, registration, deferred } from "./helpers.mjs";
 const provider = () => manifest("com.provider", { services: { provides: ["auth"], requires: [] } });

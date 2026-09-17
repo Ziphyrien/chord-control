@@ -10,7 +10,7 @@
 
 ## 配置发布密钥
 
-运行 `bun run keys:generate` 生成 Ed25519 密钥。将私钥保存为仓库 Secret `PLUGIN_SIGNING_PRIVATE_KEY`，将公钥保存到 `config/plugin-public.pem`。已经发布的仓库继续使用现有密钥。
+运行 `vp run keys:generate` 生成 Ed25519 密钥。将私钥保存为仓库 Secret `PLUGIN_SIGNING_PRIVATE_KEY`，将公钥保存到 `config/plugin-public.pem`。已经发布的仓库继续使用现有密钥。
 
 ## 发布更新
 

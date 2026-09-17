@@ -33,9 +33,9 @@
   "ignoreDependencies": [
     "@tauri-apps/cli",
     "@tauri-apps/plugin-autostart",
-    "oxfmt",
-    "oxlint",
     "svelte-check",
-    "typescript"
+    "typescript",
+    "vite",
+    "@typescript/native"
   ]
 }

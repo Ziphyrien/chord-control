@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Switch } from "bits-ui";
+  import { Checkbox, Switch } from "bits-ui";
   import type { ControllerSettings } from "../../shared/protocol.ts";
   import { parseSettings } from "../../shared/commands.ts";
   let {
@@ -91,13 +91,23 @@
             oninput={(event) => update({ checkIntervalMinutes: Number(event.currentTarget.value) })}
           /></label
         >
-        <label class="checkbox"
-          ><input
-            type="checkbox"
-            checked={draft.autoUpdate}
-            onchange={(event) => update({ autoUpdate: event.currentTarget.checked })}
-          />自动安装新增插件和更新</label
-        >
+        <div class="checkbox">
+          <Checkbox.Root
+            id="auto-update"
+            class="checkbox-control"
+            bind:checked={() => draft.autoUpdate, (autoUpdate) => update({ autoUpdate })}
+            disabled={!available}
+          >
+            {#snippet children({ checked })}
+              {#if checked}
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <path d="m3 8 3 3 7-7" fill="none" stroke="currentColor" stroke-width="2" />
+                </svg>
+              {/if}
+            {/snippet}
+          </Checkbox.Root>
+          <label for="auto-update">自动安装新增插件和更新</label>
+        </div>
         <label class="field"
           >插件来源地址<input
             type="url"

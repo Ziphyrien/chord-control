@@ -1,15 +1,15 @@
-import test from "node:test";
+import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { Challenges } from "../plugins/password-pad/src/challenges.ts";
 import { accepts, makeBoard, passwordFor } from "../plugins/password-pad/src/board.ts";
 const fixed = () => new Date(2026, 10, 11, 12); // 22W requires two clicks on the same cell.
 const input = (view, text = "22W", confirm = true) =>
-  [...text]
+  Array.from(text)
     .map((letter) => view.cells.indexOf(letter))
     .concat(confirm ? [view.cells.indexOf("＃")] : []);
 function fixture(t, now = fixed) {
   const challenges = new Challenges(() => {}, now);
-  t.after(() => challenges.dispose());
+  t.onTestFinished(() => challenges.dispose());
   return { challenges, result: challenges.request("打开控制中心") };
 }
 
@@ -66,13 +66,14 @@ test("five attempts close the request; stale revisions do not consume an attempt
 });
 
 test("request expiry is 120 seconds even without polling", async (t) => {
-  t.mock.timers.enable({ apis: ["setTimeout"] });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  t.onTestFinished(() => vi.useRealTimers());
   const { challenges, result } = fixture(t);
   const view = challenges.view();
   assert.equal(view.expiresAt - fixed().getTime(), 120000);
-  t.mock.timers.tick(119999);
+  vi.advanceTimersByTime(119999);
   assert.equal(challenges.pending, true);
-  t.mock.timers.tick(1);
+  vi.advanceTimersByTime(1);
   assert.equal(await result, false);
   assert.equal(challenges.pending, false);
 });
@@ -89,7 +90,7 @@ test("date rollover invalidates a challenge that has not expired", async (t) => 
 
 test("head-only FIFO, abort, X-close and disposal resolve pending authorizations", async (t) => {
   const challenges = new Challenges(() => {}, fixed);
-  t.after(() => challenges.dispose());
+  t.onTestFinished(() => challenges.dispose());
   const abort = new AbortController();
   const first = challenges.request("first", abort.signal);
   const second = challenges.request("second");
@@ -109,7 +110,7 @@ test("head-only FIFO, abort, X-close and disposal resolve pending authorizations
 
 test("queue bound and pre-aborted contexts fail closed", async (t) => {
   const challenges = new Challenges(() => {}, fixed);
-  t.after(() => challenges.dispose());
+  t.onTestFinished(() => challenges.dispose());
   const results = Array.from({ length: 12 }, (_, index) => challenges.request(String(index)));
   assert.equal(await challenges.request("overflow"), false);
   assert.equal(await challenges.request("aborted", AbortSignal.abort()), false);

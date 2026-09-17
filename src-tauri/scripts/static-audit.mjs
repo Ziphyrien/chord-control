@@ -65,7 +65,7 @@ if (process.argv.includes("--sync-lock")) {
   lock = Bun.TOML.parse(lockText);
 }
 const lockedRoot = lock.package.find((pkg) => pkg.name === cargo.package.name);
-assert.equal(cargo.package.version, "0.3.0");
+assert.equal(cargo.package.version, JSON.parse(read("../package.json")).version);
 assert.equal(lockedRoot.version, cargo.package.version);
 assert.deepEqual(
   new Set(lockedRoot.dependencies.map((dep) => dep.split(" ")[0])),

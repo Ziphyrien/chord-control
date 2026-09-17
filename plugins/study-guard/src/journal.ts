@@ -61,12 +61,11 @@ export function parseBackup(text: string, legacy = false): Backup {
   const entries = value.entries.map((item: Record<string, unknown>): PolicyEntry => {
     if (!item || typeof item !== "object") throw new Error("壁纸备份条目无效");
     const source = legacy ? (item.original as Record<string, unknown>) : item;
-    if (
-      !source ||
-      !POLICY_KEYS.some(([path, name]) => path === source.path && name === source.name)
-    )
-      throw new Error("壁纸备份包含未知策略");
-    const key = `${source.path}|${source.name}`;
+    const policy =
+      source && POLICY_KEYS.find(([path, name]) => path === source.path && name === source.name);
+    if (!policy) throw new Error("壁纸备份包含未知策略");
+    const [path, name] = policy;
+    const key = `${path}|${name}`;
     if (seen.has(key)) throw new Error("壁纸备份包含重复策略");
     seen.add(key);
     if (item.managed !== undefined && typeof item.managed !== "boolean")
@@ -77,8 +76,8 @@ export function parseBackup(text: string, legacy = false): Backup {
         throw new Error("旧版策略路径不匹配");
     }
     return {
-      path: String(source.path),
-      name: String(source.name),
+      path,
+      name,
       original: legacy ? legacyValue(item.original) : parseRaw(item.original),
       installed: legacy ? legacyValue(item.installed) : parseRaw(item.installed),
       managed: item.managed !== false,

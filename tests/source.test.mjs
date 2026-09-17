@@ -1,4 +1,4 @@
-import test from "node:test";
+import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { SignedReleaseSource } from "../controller/src/infrastructure/release-source.ts";
@@ -17,7 +17,7 @@ async function server(t) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const previous = process.env.CHORD_CONTROL_ALLOW_LOCAL_HTTP;
   process.env.CHORD_CONTROL_ALLOW_LOCAL_HTTP = "1";
-  t.after(async () => {
+  t.onTestFinished(async () => {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
     if (previous === undefined) delete process.env.CHORD_CONTROL_ALLOW_LOCAL_HTTP;
@@ -30,7 +30,7 @@ test("source revalidates conditional cache and only trusts verified version hist
     keys = publisher(),
     release = signed(manifest("signed.plugin"), keys.privateKey),
     source = new SignedReleaseSource();
-  t.after(() => source.close());
+  t.onTestFinished(() => source.close());
   const origin = { kind: "manifest", url: h.url, publicKey: keys.publicKey };
   h.responses.push({ status: 200, body: JSON.stringify(release) });
   const first = await source.manifest(origin);
@@ -56,7 +56,7 @@ test(
   { timeout: 30000 },
   async (t) => {
     const h = await createTransportHarness();
-    t.after(() => h.close());
+    t.onTestFinished(() => h.close());
     await h.start();
     const release = await h.fixture();
     await h.add(release);
