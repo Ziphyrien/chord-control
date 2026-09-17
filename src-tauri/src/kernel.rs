@@ -50,7 +50,9 @@ fn apply(app: &AppHandle, visible: (bool, bool)) -> Result<(), String> {
     let tray = app.tray_by_id("controller").ok_or("托盘不可用")?;
     let window = app.get_webview_window("main").ok_or("主窗口不可用")?;
     tray.set_visible(visible.0).map_err(|e| e.to_string())?;
-    window.set_skip_taskbar(!visible.1).map_err(|e| e.to_string())
+    window
+        .set_skip_taskbar(!visible.1)
+        .map_err(|e| e.to_string())
 }
 fn owned<'a>(
     sessions: &'a mut HashMap<String, Session>,
@@ -152,16 +154,20 @@ pub(crate) fn execute(
             ));
             #[cfg(not(windows))]
             let hwnd: Option<String> = None;
-            Ok(json!({"protocol":1,"hostVersion":app.package_info().version.to_string(),
+            Ok(
+                json!({"protocol":1,"hostVersion":app.package_info().version.to_string(),
                 "platform":std::env::consts::OS,"operations":OPERATIONS,"mainWindowHandle":hwnd,
                 "executable":std::env::current_exe().map_err(|e|e.to_string())?,
-                "pid":std::process::id()}))
+                "pid":std::process::id()}),
+            )
         }
         "window.state" => {
             let visible = visibility(&lock(&state.0));
-            Ok(json!({"visible":window.is_visible().map_err(|e|e.to_string())?,
+            Ok(
+                json!({"visible":window.is_visible().map_err(|e|e.to_string())?,
                 "minimized":window.is_minimized().map_err(|e|e.to_string())?,
-                "trayVisible":visible.0,"taskbarVisible":visible.1}))
+                "trayVisible":visible.0,"taskbarVisible":visible.1}),
+            )
         }
         "window.open" => {
             crate::desktop::request_action(app, crate::desktop::Action::Open);

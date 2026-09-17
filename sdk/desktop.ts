@@ -1,7 +1,7 @@
 import type { Context, JsonValue } from "@earendil-works/chord";
 import type { KernelService } from "./kernel.ts";
 
-/** Bundled into each calling plugin; no separate API plugin or controller rebuild is needed. */
+/** Desktop helpers bundled into the calling plugin. */
 export function createDesktop(kernel: KernelService) {
   async function action(operation: string, input: JsonValue, context: Context): Promise<void> {
     await kernel.call(operation, input, context);

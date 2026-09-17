@@ -28,10 +28,7 @@ mod tests {
             Visibility::combined([&tray, &taskbar].into_iter()),
             (false, false)
         );
-        assert_eq!(
-            Visibility::combined([&taskbar].into_iter()),
-            (true, false)
-        );
+        assert_eq!(Visibility::combined([&taskbar].into_iter()), (true, false));
         assert_eq!(Visibility::combined([].into_iter()), (true, true));
     }
 }

@@ -1,6 +1,6 @@
 import { defineService, type Context, type JsonValue } from "@earendil-works/chord";
 
-/** Stable, versioned primitives. High-level APIs belong to independently updated service plugins. */
+/** Versioned host primitives available to plugins with the host-control grant. */
 export interface KernelService {
   call(operation: string, input: JsonValue, context: Context): Promise<JsonValue>;
 }

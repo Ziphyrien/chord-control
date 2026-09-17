@@ -60,7 +60,11 @@ exports.default={id:${JSON.stringify(id)},setup(env){
       formatVersion: 2,
       plugin: { id, version: "1.0.0" },
       entries: {
-        worker: { file, integrity: `sha256-${hash.toString("base64")}`, externalImports: [] },
+        worker: {
+          file,
+          integrity: `sha256-${hash.toString("base64")}`,
+          externalImports: ["node:fs/promises", "node:path", "node:http"],
+        },
       },
     };
     const zip = Buffer.from(
@@ -105,7 +109,11 @@ exports.default={id:${JSON.stringify(id)},setup(env){
       suppressed: [],
     }),
   );
-  child = spawn(join(root, "chord-control.exe"), ["--background"], { cwd: root, stdio: "ignore" });
+  child = spawn(join(root, "chord-control.exe"), ["--background"], {
+    cwd: root,
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  child.stderr.on("data", (bytes) => process.stderr.write(bytes));
   const exit = new Promise((resolve) => child.once("exit", (code) => resolve(code)));
   const ports = [];
   for (const plugin of plugins) {
@@ -190,7 +198,7 @@ exports.default={id:${JSON.stringify(id)},setup(env){
       timeout: 55000,
     }).catch(() => child.kill());
   }
-  for (const name of ["desktop.log", "controller.log"]) {
+  for (const name of ["controller-stderr.log"]) {
     try {
       console.error((await readFile(join(data, name), "utf8")).slice(-5000));
     } catch {
