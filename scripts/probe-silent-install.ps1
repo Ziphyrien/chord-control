@@ -23,13 +23,44 @@ $expectedSettings = @{
   catalogUrl = ''; catalogPublicKey = ''
 }
 $watchedNames = @([IO.Path]::GetFileNameWithoutExtension($Installer), 'chord-control', 'WebViewSetup')
-function Assert-Hidden {
-  foreach ($process in @(Get-Process -Name $watchedNames -ErrorAction SilentlyContinue)) {
-    $process.Refresh()
-    if ($process.MainWindowHandle -ne 0) {
-      throw "Visible window during silent installation: $($process.ProcessName) / $($process.MainWindowTitle)"
-    }
+# Tauri's single-instance IPC window has WS_VISIBLE but is 0x0; inspect every real window.
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class ProbeWindows {
+  private delegate bool Visitor(IntPtr window, IntPtr state);
+  [StructLayout(LayoutKind.Sequential)]
+  private struct Rect { public int Left, Top, Right, Bottom; }
+  [DllImport("user32.dll")] private static extern bool EnumWindows(Visitor visitor, IntPtr state);
+  [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+  [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out Rect rect);
+  [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+  private static extern int GetWindowText(IntPtr window, StringBuilder text, int count);
+  public static string[] Visible(int[] pids) {
+    var owners = new HashSet<int>(pids);
+    var windows = new List<string>();
+    EnumWindows((window, state) => {
+      uint pid; Rect rect;
+      GetWindowThreadProcessId(window, out pid);
+      if (owners.Contains((int)pid) && IsWindowVisible(window) && GetWindowRect(window, out rect)
+          && rect.Right > rect.Left && rect.Bottom > rect.Top) {
+        var title = new StringBuilder(512);
+        GetWindowText(window, title, title.Capacity);
+        windows.Add("pid=" + pid + " title=" + title + " size=" + (rect.Right - rect.Left) + "x" + (rect.Bottom - rect.Top));
+      }
+      return true;
+    }, IntPtr.Zero);
+    return windows.ToArray();
   }
+}
+'@
+function Assert-Hidden {
+  $pids = @(Get-Process -Name $watchedNames -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+  $visible = [ProbeWindows]::Visible([int[]]$pids)
+  if ($visible.Count) { throw "Visible window during silent installation: $($visible -join '; ')" }
 }
 function Start-ProbeProcess([string]$Executable, [string]$Arguments) {
   $start = [Diagnostics.ProcessStartInfo]::new($Executable, $Arguments)
@@ -58,6 +89,12 @@ function Write-ProbeDiagnostics {
 function Stop-ProbeHost {
   $hostPath = Join-Path $installDir 'chord-control.exe'
   if (Test-Path $hostPath) {
+    # A startup assertion may fail before the host has created its guard session.
+    $readyDeadline = [DateTime]::UtcNow.AddSeconds(30)
+    while (@(Get-ProbeProcesses).Count -gt 0 -and -not (Test-Path (Join-Path $dataDir 'guard/run'))) {
+      if ([DateTime]::UtcNow -gt $readyDeadline) { throw 'Host did not initialize its maintenance session.' }
+      Start-Sleep -Milliseconds 100
+    }
     $stop = Start-ProbeProcess $hostPath '--maintenance-stop'
     if (-not $stop.WaitForExit(55000)) { throw 'Maintenance stop timed out.' }
     if ($stop.ExitCode -ne 0) { throw "Maintenance stop failed: $($stop.ExitCode)" }
