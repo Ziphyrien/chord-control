@@ -88,7 +88,10 @@ export async function prepareAppRelease({
   const tag = `app-v${project.version}`;
   if (refType === "tag" && refName !== tag)
     throw new Error("Release tag does not match app version");
-  const notes = (await readFile(join(root, `docs/releases/${project.version}.md`), "utf8")).trim();
+  const notes = (await readFile(join(root, `docs/releases/${project.version}.md`), "utf8"))
+    .trim()
+    .replace(/^#[ \t]+[^\r\n]*(?:\r?\n|$)/, "")
+    .trim();
   if (!notes) throw new Error("Release notes are empty");
   const bundle = join(root, "src-tauri/target/release/bundle/nsis");
   const installers = (await readdir(bundle, { withFileTypes: true })).filter(

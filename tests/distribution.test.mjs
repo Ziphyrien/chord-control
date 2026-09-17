@@ -431,7 +431,8 @@ test("app preparation verifies minisign, uses actual notes, and emits exactly fi
   assert.equal(result.tag, "app-v0.3.0");
   assert.deepEqual([...result.assets.keys()], appAssetNames);
   const latest = JSON.parse(result.assets.get("latest.json"));
-  assert.match(latest.notes, /Actual release notes/);
+  assert.equal(latest.notes, "Actual release notes.");
+  assert.equal(result.notes, latest.notes);
   assert.equal(latest.platforms["windows-x86_64"].signature, fixture.signature);
   assert.match(latest.platforms["windows-x86_64"].url, /app-v0\.3\.0\/Chord.Control-setup.exe$/);
   assert.equal(result.assets.get("SHA256SUMS.txt").toString().trim().split("\n").length, 4);
