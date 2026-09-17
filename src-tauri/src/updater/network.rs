@@ -66,11 +66,16 @@ pub(super) async fn check(app: &AppHandle) -> Result<Option<Update>, String> {
         });
     }
     let mut errors = Vec::new();
+    let mut current = false;
     while let Some(result) = checks.next().await {
         match result {
-            Ok(update) => return Ok(update), // Dropping the other futures cancels their requests.
+            Ok(Some(update)) => return Ok(Some(update)), // Drop cancels the other requests.
+            Ok(None) => current = true, // A cached mirror must not hide a newer direct release.
             Err(error) => errors.push(error),
         }
+    }
+    if current {
+        return Ok(None);
     }
     Err(format!("检查主程序更新失败: {}", errors.join("; ")))
 }
