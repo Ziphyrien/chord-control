@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, realpath } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { downloadFromSources } from "../../../shared/downloads.ts";
@@ -17,17 +17,6 @@ export interface UpdaterConfig {
   pubkey: string;
 }
 const minimumTarget = "0.4.2";
-export const installationKey = "Software\\chord\\Chord Control";
-export function registryText(value: unknown): string {
-  if (
-    !object(value) ||
-    value.type !== 1 ||
-    !Array.isArray(value.bytes) ||
-    !value.bytes.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)
-  )
-    throw new Error("无法读取主程序安装信息");
-  return Buffer.from(value.bytes).toString("utf16le").replace(/\0+$/, "");
-}
 export function parseRelease(bytes: Uint8Array, endpoint: string): Release {
   const data: unknown = JSON.parse(Buffer.from(bytes).toString("utf8"));
   if (!object(data) || typeof data.version !== "string" || !object(data.platforms))
@@ -104,12 +93,15 @@ export async function launch(
   signal: AbortSignal,
   failed: (error: Error) => void,
 ): Promise<void> {
-  // NSIS's /D handling expects the directory as a final unquoted tail. The existing
-  // current-user install registry already selects the same directory, so omit /D.
-  if (resolve(installation).toLowerCase() !== resolve(dirname(process.execPath)).toLowerCase())
+  const runningDirectory = dirname(await realpath(process.execPath));
+  if (resolve(installation).toLowerCase() !== runningDirectory.toLowerCase())
     throw new Error("运行中的控制器与安装目录不一致，已取消升级");
   signal.throwIfAborted();
-  const child = spawn(installer, ["/S", "/UPDATE"], {
+  // NSIS consumes /D as the final unquoted command-line tail, including spaces.
+  // Quote argv[0] explicitly because libuv must not quote that /D tail for us.
+  const child = spawn(installer, ["/S", "/UPDATE", `/D=${installation}`], {
+    argv0: `"${installer}"`,
+    windowsVerbatimArguments: true,
     detached: true,
     windowsHide: true,
     stdio: "ignore",

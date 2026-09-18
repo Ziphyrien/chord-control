@@ -3,16 +3,9 @@ import { join } from "node:path";
 import { defineFacet } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { ControlHost } from "../../../sdk/index.ts";
+import { installedApplication } from "./installation.ts";
 import { message } from "../../../shared/validation.ts";
-import {
-  installationKey,
-  registryText,
-  latest,
-  needed,
-  prepare,
-  launch,
-  type UpdaterConfig,
-} from "./upgrade.ts";
+import { latest, needed, prepare, launch, type UpdaterConfig } from "./upgrade.ts";
 
 declare const __CHORD_APP_UPDATER__: UpdaterConfig;
 
@@ -30,14 +23,9 @@ export default defineFacet({
       try {
         if (process.platform !== "win32" || process.arch !== "x64")
           throw new Error("升级助手仅支持 Windows x64");
-        const version = registryText(
-          await host.native("registry.read", { path: installationKey, name: "Version" }, context),
-        );
-        const installation = registryText(
-          await host.native("registry.read", { path: installationKey, name: "" }, context),
-        );
+        const installation = await installedApplication(process.execPath, lifetime.signal);
         const release = await latest(__CHORD_APP_UPDATER__, lifetime.signal);
-        if (needed(version, release)) {
+        if (needed(installation.version, release)) {
           await host.log(`正在准备主程序 ${release.version}`, context);
           const installer = await prepare(
             release,
@@ -47,7 +35,7 @@ export default defineFacet({
           );
           launched = true;
           try {
-            await launch(installer, installation, lifetime.signal, (error) => {
+            await launch(installer, installation.directory, lifetime.signal, (error) => {
               launched = false;
               void host.log(message(error), context).catch(() => {});
               timer = setTimeout(start, 5 * 60_000);

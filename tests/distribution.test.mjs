@@ -1,10 +1,5 @@
 import { test, vi } from "vite-plus/test";
-import {
-  registryText,
-  parseRelease,
-  needed,
-  prepare,
-} from "../plugins/upgrade-bridge/src/upgrade.ts";
+import { parseRelease, needed, prepare } from "../plugins/upgrade-bridge/src/upgrade.ts";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -401,8 +396,6 @@ test("legacy bridge waits for a host supporting retirement and only accepts offi
   assert.equal(needed("0.3.2", { ...release, version: "0.4.1" }), false);
   value.platforms["windows-x86_64"].url = "https://example.test/install.exe";
   assert.throws(() => parseRelease(Buffer.from(JSON.stringify(value)), endpoint), /官方发布/);
-  assert.equal(registryText({ type: 1, bytes: [...Buffer.from("0.3.2\0", "utf16le")] }), "0.3.2");
-  assert.throws(() => registryText({ type: 4, bytes: [1] }));
 });
 
 test("legacy bridge rejects corrupt mirror bytes and writes only a verified installer", async (t) => {
