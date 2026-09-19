@@ -1,7 +1,7 @@
 import { dependencyGraph, dependentClosure } from "../../../shared/dependencies.ts";
 import type { PluginCatalog, PluginManifest, PluginSummary } from "../../../shared/protocol.ts";
 import type { Configuration, Registration } from "./configuration.ts";
-import { catalogSource, sourceKey } from "./configuration.ts";
+import { catalogSource, isIgnored, sourceKey } from "./configuration.ts";
 import { completed, hasUpdate } from "./releases.ts";
 
 export function installedGraph(config: Configuration, enabledOnly = false) {
@@ -47,24 +47,18 @@ export function reconcileCatalog(
       item.sourceStatus = "detached";
       continue;
     }
-    item.available = releases.get(item.id);
-    item.sourceStatus = item.available ? "available" : "missing";
+    const release = releases.get(item.id);
+    item.available = release ?? (isIgnored(next, item) ? item.available : undefined);
+    item.sourceStatus = release ? "available" : "missing";
   }
   for (const manifest of catalog.plugins) {
     if (completed(manifest)) continue;
     if (next.plugins.some((item) => item.id.toLowerCase() === manifest.id.toLowerCase())) continue;
-    if (
-      next.suppressed.some(
-        (item) =>
-          item.id.toLowerCase() === manifest.id.toLowerCase() && sourceKey(item.source) === key,
-      )
-    )
-      continue;
     if (next.plugins.length >= 100) throw new Error("本地插件数量超过 100 项");
     next.plugins.push({
       id: manifest.id,
       source: { ...source },
-      enabled: true,
+      enabled: !isIgnored(next, { id: manifest.id, source }),
       available: manifest,
       sourceStatus: "available",
     });
@@ -88,8 +82,9 @@ export function describePlugins(
   );
   return config.plugins.map((item) => {
     const manifest: PluginManifest | undefined = item.installed ?? item.available;
+    const ignored = isIgnored(config, item);
     const active = running(item.id),
-      update = hasUpdate(item);
+      update = !ignored && hasUpdate(item);
     const unavailable = (graph.dependencies.get(item.id) ?? []).find(
       (id) => !installedIds.has(id) || !running(id),
     );
@@ -105,17 +100,19 @@ export function describePlugins(
       version: item.installed?.version ?? "—",
       latestVersion: item.available?.version,
       revision: item.installed?.artifactSha256,
-      status: !item.enabled
-        ? "paused"
-        : error
-          ? "error"
-          : blockedReason
-            ? "blocked"
-            : update
-              ? "update"
-              : active
-                ? "active"
-                : "idle",
+      status: ignored
+        ? "ignored"
+        : !item.enabled
+          ? "paused"
+          : error
+            ? "error"
+            : blockedReason
+              ? "blocked"
+              : update
+                ? "update"
+                : active
+                  ? "active"
+                  : "idle",
       running: active,
       installed: Boolean(item.installed),
       enabled: item.enabled,

@@ -337,7 +337,7 @@ export class ControllerSession {
       () => this.client.send(command),
       () => {
         this.closeConfirmation();
-        this.notify(confirmation.kind === "disable" ? "插件已暂停" : "插件已移除");
+        this.notify(confirmation.kind === "disable" ? "插件已暂停" : "插件已忽略");
       },
       () => epoch === this.confirmationEpoch,
     );

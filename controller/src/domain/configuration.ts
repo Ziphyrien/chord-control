@@ -45,6 +45,28 @@ export interface Configuration {
 export function sourceKey(source: PluginSource): string {
   return JSON.stringify([source.kind, source.url, source.publicKey]);
 }
+export function isIgnored(
+  config: Configuration,
+  plugin: Pick<Registration, "id" | "source">,
+): boolean {
+  const id = plugin.id.toLowerCase(),
+    key = sourceKey(plugin.source);
+  return config.suppressed.some(
+    (item) => item.id.toLowerCase() === id && sourceKey(item.source) === key,
+  );
+}
+export function setIgnored(
+  config: Configuration,
+  plugin: Pick<Registration, "id" | "source">,
+  ignored: boolean,
+): void {
+  const id = plugin.id.toLowerCase(),
+    key = sourceKey(plugin.source);
+  config.suppressed = config.suppressed.filter(
+    (item) => item.id.toLowerCase() !== id || sourceKey(item.source) !== key,
+  );
+  if (ignored) config.suppressed.push({ id: plugin.id, source: plugin.source });
+}
 export function catalogSource(settings: ControllerSettings): PluginSource {
   return { kind: "catalog", url: settings.catalogUrl, publicKey: settings.catalogPublicKey };
 }
@@ -134,9 +156,9 @@ export function readConfiguration(input: unknown, allowUnsigned = false): Config
       ? input.ignoredCatalogIds.map((id) => ({ id, source: current }))
       : []);
   if (!Array.isArray(rawSuppressed) || rawSuppressed.length > 10000)
-    throw new Error("本地移除记录格式错误");
+    throw new Error("本地忽略记录格式错误");
   const suppressed = rawSuppressed.map((item): Suppression => {
-    if (!object(item)) throw new Error("本地移除记录格式错误");
+    if (!object(item)) throw new Error("本地忽略记录格式错误");
     assertId(item.id);
     return { id: item.id, source: readSource(item.source, allowUnsigned) };
   });

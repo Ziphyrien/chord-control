@@ -159,46 +159,6 @@ test("loading, offline, retry and business rejection remain distinct", async ({ 
   expect(h.errors).toEqual([]);
 });
 
-test("pause and remove confirm exact downstream names and IDs", async ({ page }) => {
-  const value = snapshot();
-  const h = await boot(page, value, async (command) => {
-    if (command.type === "set_enabled")
-      value.plugins = value.plugins.map((item) => ({
-        ...item,
-        enabled: false,
-        running: false,
-        status: "paused",
-        dependents: [],
-      }));
-    if (command.type === "remove_plugin")
-      value.plugins = value.plugins.filter((item) => item.id !== command.pluginId);
-    return { result: null, snapshot: value };
-  });
-  const base = page.getByRole("article", { name: "基础服务", exact: true });
-  await base.getByRole("button", { name: "暂停", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("listitem")).toHaveText(["便笺", "日程"]);
-  await page.keyboard.press("Escape");
-  expect(h.commands.some((item) => item.type === "set_enabled")).toBe(false);
-  await base.getByRole("button", { name: "暂停", exact: true }).click();
-  await dialog.getByRole("button", { name: "确认暂停" }).click();
-  await expect(dialog).toHaveCount(0);
-  expect(h.commands.find((item) => item.type === "set_enabled")).toMatchObject({
-    pluginId: "base",
-    enabled: false,
-    affectedPluginIds: ["notes", "daily"],
-  });
-  await base.getByRole("button", { name: "移除", exact: true }).click();
-  await dialog.getByRole("button", { name: "确认移除" }).click();
-  await expect(base).toHaveCount(0);
-  expect(h.commands.find((item) => item.type === "remove_plugin")).toMatchObject({
-    pluginId: "base",
-    affectedPluginIds: [],
-  });
-  await expect(page.getByRole("article", { name: "便笺", exact: true })).toContainText("已暂停");
-  expect(h.errors).toEqual([]);
-});
-
 test("changed dependency graph requires a fresh explicit confirmation", async ({ page }) => {
   const value = snapshot();
   let attempts = 0;
@@ -391,7 +351,7 @@ test("a snapshot changing the open confirmation prevents submission of the stale
   expect(h.errors).toEqual([]);
 });
 
-test("removing an enabled provider confirms all downstream plugins and preserves their rows", async ({
+test("ignore preserves plugin rows and reinstall restores only the selected plugin", async ({
   page,
 }) => {
   const value = snapshot();
@@ -402,36 +362,49 @@ test("removing an enabled provider confirms all downstream plugins and preserves
         JSON.stringify(command.affectedPluginIds) !== JSON.stringify(["notes", "daily"])
       )
         return { result: null, message: "需要完整确认名单" };
-      value.plugins = value.plugins
-        .filter((item) => item.id !== command.pluginId)
-        .map((item) => ({
-          ...item,
-          running: false,
-          enabled: false,
-          status: "paused",
-          dependents: [],
-        }));
+      value.plugins = value.plugins.map((item) => ({
+        ...item,
+        running: false,
+        enabled: false,
+        hasUi: false,
+        installed: item.id !== command.pluginId,
+        status: item.id === command.pluginId ? "ignored" : "paused",
+        dependents: [],
+      }));
     }
+    if (command.type === "install")
+      value.plugins = value.plugins.map((item) =>
+        item.id === command.pluginId
+          ? {
+              ...item,
+              installed: true,
+              enabled: true,
+              running: true,
+              hasUi: true,
+              status: "active",
+            }
+          : item,
+      );
     return { result: null, snapshot: value };
   });
-  await page
-    .getByRole("article", { name: "基础服务", exact: true })
-    .getByRole("button", { name: "移除", exact: true })
-    .click();
+  const base = page.getByRole("article", { name: "基础服务", exact: true });
+  await base.getByRole("button", { name: "忽略", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await expect(
-    dialog.getByRole("list", { name: "一并暂停的插件" }).getByRole("listitem"),
-  ).toHaveText(["便笺", "日程"]);
-  await expect(dialog).toContainText("安装和数据会保留");
-  await dialog.getByRole("button", { name: "确认移除" }).click();
+  await expect(dialog.getByRole("listitem")).toHaveText(["便笺", "日程"]);
+  await expect(dialog).toContainText("保留数据和列表项");
+  await dialog.getByRole("button", { name: "确认忽略" }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("article")).toHaveCount(2);
-  for (const name of ["便笺", "日程"]) {
-    const row = page.getByRole("article", { name, exact: true });
-    await expect(row).toContainText("已暂停");
-    await expect(row).toContainText("v1.0.0");
-  }
+  await expect(page.getByRole("article")).toHaveCount(3);
+  await expect(base).toContainText("已忽略");
+  await expect(base.getByRole("button", { name: "忽略", exact: true })).toHaveCount(0);
+  await base.getByRole("button", { name: "安装", exact: true }).click();
+  await expect(base).toContainText("运行中");
+  for (const name of ["便笺", "日程"])
+    await expect(page.getByRole("article", { name, exact: true })).toContainText("已暂停");
   expect(h.commands.filter((command) => command.type === "remove_plugin")).toHaveLength(1);
+  expect(h.commands.find((command) => command.type === "install")).toMatchObject({
+    pluginId: "base",
+  });
   expect(h.errors).toEqual([]);
 });
 

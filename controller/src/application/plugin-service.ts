@@ -5,6 +5,8 @@ import { message } from "../../../shared/validation.ts";
 import {
   catalogSource,
   sourceKey,
+  isIgnored,
+  setIgnored,
   settingsFrom,
   type Configuration,
   type Registration,
@@ -74,12 +76,7 @@ export class PluginService {
           this.dependencies.allowUnsigned,
           false,
         );
-        if (
-          !config.suppressed.some(
-            (item) => item.id === plugin.id && sourceKey(item.source) === sourceKey(plugin.source),
-          )
-        )
-          config.suppressed.push({ id: plugin.id, source: plugin.source });
+        setIgnored(config, plugin, true);
       }
       await repository.commit(config);
       for (const plugin of retired) {
@@ -207,7 +204,12 @@ export class PluginService {
       const next = structuredClone(config),
         prepared: string[] = [];
       for (const plugin of next.plugins)
-        if (plugin.enabled && next.settings.autoUpdate && hasUpdate(plugin)) {
+        if (
+          plugin.enabled &&
+          !isIgnored(next, plugin) &&
+          next.settings.autoUpdate &&
+          hasUpdate(plugin)
+        ) {
           try {
             plugin.installed = await this.prepare(plugin);
             plugin.updatedAt = new Date().toISOString();
@@ -257,6 +259,10 @@ export class PluginService {
       try {
         plugin.installed = await this.prepare(plugin);
         plugin.updatedAt = new Date().toISOString();
+        if (isIgnored(next, plugin)) {
+          plugin.enabled = true;
+          setIgnored(next, plugin, false);
+        }
         await this.lifecycle.commit(next, plugin.enabled ? [id] : [], validate);
         this.lifecycle.errors.delete(id);
         this.dependencies.log(
@@ -295,9 +301,7 @@ export class PluginService {
       plugin.installed = await this.prepare(plugin);
       plugin.updatedAt = new Date().toISOString();
       next.plugins.push(plugin);
-      next.suppressed = next.suppressed.filter(
-        (item) => item.id !== plugin.id || sourceKey(item.source) !== sourceKey(source),
-      );
+      setIgnored(next, plugin, false);
       await this.lifecycle.commit(next, [plugin.id], validate);
       this.dependencies.log("插件已添加", value.name, "success");
     });
@@ -319,6 +323,7 @@ export class PluginService {
         plugin.updatedAt = new Date().toISOString();
       }
       if (enabled) {
+        setIgnored(next, plugin, false);
         const graph = installedGraph(next, true);
         if (graph.blocked.has(id)) throw new Error(graph.blocked.get(id));
       }
@@ -337,16 +342,13 @@ export class PluginService {
       const next = this.dependencies.repository.snapshot(),
         plugin = this.registration(next, id);
       for (const item of confirmAffected(next, id, approved)) item.enabled = false;
-      next.plugins = next.plugins.filter((item) => item.id !== id);
-      if (
-        !next.suppressed.some(
-          (item) => item.id === id && sourceKey(item.source) === sourceKey(plugin.source),
-        )
-      )
-        next.suppressed.push({ id, source: plugin.source });
+      plugin.available ??= plugin.installed;
+      plugin.installed = undefined;
+      plugin.enabled = false;
+      setIgnored(next, plugin, true);
       await this.lifecycle.commit(next, [], validate);
       this.lifecycle.errors.delete(id);
-      this.dependencies.log("插件已移除", `${plugin.installed?.name ?? id}；保留插件数据`);
+      this.dependencies.log("插件已忽略", `${plugin.available?.name ?? id}；保留插件数据`);
     });
   }
   updateSettings(value: ControllerSettings, validate: () => void = () => {}): Promise<void> {

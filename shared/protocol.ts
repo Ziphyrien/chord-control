@@ -1,7 +1,14 @@
 import { defaultCatalogPublicKey, defaultCatalogUrl } from "./distribution.ts";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
-export type PluginStatus = "active" | "update" | "paused" | "blocked" | "error" | "idle";
+export type PluginStatus =
+  | "active"
+  | "update"
+  | "paused"
+  | "blocked"
+  | "error"
+  | "idle"
+  | "ignored";
 export type ActivityTone = "success" | "info" | "warning" | "error";
 export type SourceStatus = "available" | "missing" | "detached";
 export interface PluginManifest {

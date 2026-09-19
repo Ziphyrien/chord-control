@@ -16,12 +16,14 @@
     onclose: () => void;
     onconfirm: () => Promise<void>;
   } = $props();
-  const removing = $derived(confirmation.kind === "remove");
+  const ignoring = $derived(confirmation.kind === "remove");
 </script>
 
-<Modal title={`${removing ? "移除" : "暂停"}「${confirmation.name}」？`} {onclose}>
+<Modal title={`${ignoring ? "忽略" : "暂停"}「${confirmation.name}」？`} {onclose}>
   {#snippet description()}
-    {removing ? "移除后保留插件数据。" : "暂停后保留插件安装和数据。"}
+    {ignoring
+      ? "忽略后停止插件，保留数据和列表项，不再自动安装。点击“安装”可恢复使用。"
+      : "暂停后保留插件安装和数据。"}
     {#if confirmation.dependents.length}
       以下插件会一并暂停，安装和数据会保留。
     {/if}
@@ -42,8 +44,8 @@
         ? "处理中…"
         : confirmation.needsRefresh
           ? "刷新名单"
-          : removing
-            ? "确认移除"
+          : ignoring
+            ? "确认忽略"
             : "确认暂停"}</button
     >
   </div>

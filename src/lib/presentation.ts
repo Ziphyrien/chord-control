@@ -4,6 +4,7 @@ export const statusLabels: Record<PluginStatus, string> = {
   active: "运行中",
   update: "可更新",
   paused: "已暂停",
+  ignored: "已忽略",
   blocked: "无法启动",
   error: "异常",
   idle: "待安装",

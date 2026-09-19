@@ -81,11 +81,11 @@
                   : oncommand({ type: "set_enabled", pluginId: plugin.id, enabled: true })}
               >{plugin.enabled ? "暂停" : "启动"}</button
             >{/if}
-          <button
-            class="text-button danger"
-            disabled={!available}
-            onclick={() => onrequest(plugin, "remove")}>移除</button
-          >
+          {#if plugin.status !== "ignored"}<button
+              class="text-button danger"
+              disabled={!available}
+              onclick={() => onrequest(plugin, "remove")}>忽略</button
+            >{/if}
         </div>
       </article>
     {:else}

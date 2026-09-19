@@ -17,7 +17,7 @@ test("startup follows provider order even when persisted registrations are rever
   await h.service.close();
   assert.deepEqual(h.calls, ["stop:com.downstream", "stop:com.consumer", "stop:com.provider"]);
 });
-test("disable/remove require exact dependent set and preserve installations and user choices", async () => {
+test("pause and ignore preserve rows, dependent choices, and explicit reinstall", async () => {
   const h = await applicationFixture([
     registration(provider()),
     registration(consumer()),
@@ -39,12 +39,46 @@ test("disable/remove require exact dependent set and preserve installations and 
   await h.service.setEnabled("com.provider", true);
   await h.service.setEnabled("com.consumer", true);
   await h.service.remove("com.provider", ["com.consumer"]);
-  assert.equal(h.service.summaries().length, 2);
-  assert(h.service.summaries().every((item) => item.installed && !item.enabled));
-  await h.service.checkUpdates();
+  const ignored = () => h.service.summaries().find((item) => item.id === "com.provider");
+  assert.equal(h.service.summaries().length, 3);
+  assert.equal(ignored().status, "ignored");
+  assert.equal(ignored().installed, false);
+  assert(h.service.summaries().every((item) => !item.enabled && !item.running));
   assert(
-    !h.service.summaries().some((item) => item.id === "com.provider"),
-    "tombstone blocks automatic reinstall",
+    h.service
+      .summaries()
+      .filter((item) => item.id !== "com.provider")
+      .every((item) => item.installed),
+  );
+  h.catalog = {
+    format: 1,
+    plugins: [
+      consumer(),
+      downstream(),
+      { ...provider(), version: "2.0.0", artifactSha256: "b".repeat(64) },
+    ],
+  };
+  h.calls.length = 0;
+  await h.service.checkUpdates();
+  await h.service.restore();
+  assert.equal(ignored().status, "ignored");
+  assert.equal(ignored().latestVersion, "2.0.0");
+  assert.deepEqual(h.calls, [], "sync and restore must not reinstall ignored plugins");
+  h.failActivate = ["com.provider@2.0.0"];
+  await assert.rejects(h.service.install("com.provider"), /activation failed/);
+  assert.equal(ignored().status, "ignored");
+  assert.equal(ignored().running, false);
+  assert.equal(h.repository.snapshot().suppressed.length, 1);
+  h.failActivate = [];
+  await h.service.install("com.provider");
+  assert.equal(ignored().status, "active");
+  assert.equal(ignored().version, "2.0.0");
+  assert.equal(h.repository.snapshot().suppressed.length, 0);
+  assert(
+    h.service
+      .summaries()
+      .filter((item) => item.id !== "com.provider")
+      .every((item) => item.installed && !item.enabled),
   );
   await h.service.close();
 });

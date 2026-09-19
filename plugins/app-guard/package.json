@@ -1,6 +1,6 @@
 {
   "name": "com.chord.app-guard",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "通过密保盘授权程序入口、退出和保护设置变更",
   "type": "module",

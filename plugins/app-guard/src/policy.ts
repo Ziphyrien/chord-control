@@ -20,6 +20,6 @@ export function authorizationTitle(action: string, input: Json): string | undefi
     ...(Array.isArray(input.affectedPluginIds) ? input.affectedPluginIds : []),
   ];
   if (!affected.some((id) => typeof id === "string" && PROTECTED.has(id))) return;
-  if (action === "remove_plugin") return "移除保护插件";
+  if (action === "remove_plugin") return "忽略保护插件";
   if (action === "set_enabled" && input.enabled === false) return "暂停保护插件";
 }
