@@ -1,4 +1,5 @@
 import { test, vi } from "vite-plus/test";
+import { HOST_VERSION } from "../shared/versions.ts";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
 import { ControllerApplication } from "../controller/src/application/controller.ts";
@@ -132,5 +133,50 @@ test("plugin automatic-install opt-out still discovers updates without downloadi
   assert.equal(
     h.calls.some((call) => call.startsWith("download:")),
     false,
+  );
+});
+
+test("startup retries cached pending releases immediately while preserving pause, ignore and opt-out", async (t) => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  t.onTestFinished(() => vi.useRealTimers());
+  const pending = manifest("pending.plugin", { minHostVersion: HOST_VERSION });
+  const paused = manifest("paused.plugin"),
+    ignored = manifest("ignored.plugin");
+  const h = await applicationFixture([
+    registration(manifest("existing.plugin")),
+    registration(pending, { installed: undefined }),
+    registration(paused, { installed: undefined, enabled: false }),
+    registration(ignored, { installed: undefined, enabled: false }),
+  ]);
+  const config = h.repository.snapshot();
+  config.suppressed = [{ id: ignored.id, source: config.plugins[3].source }];
+  await h.repository.commit(config);
+  const app = new ControllerApplication({
+    plugins: h.service,
+    runtime: h.runtime,
+    gate: h.gate,
+    activity: new ActivityLog(),
+    dataDir: "fixture",
+    openUi: async () => null,
+    emit: () => {},
+  });
+  t.onTestFinished(async () => {
+    app.stop();
+    await h.service.close();
+  });
+  assert.equal(h.service.summaries().find((plugin) => plugin.id === pending.id).installed, false);
+  await h.service.updateSettings({ ...h.service.settings, autoUpdate: false });
+  assert.equal(h.service.needsStartupCheck, false);
+  await h.service.updateSettings({ ...h.service.settings, autoUpdate: true });
+  app.start();
+  vi.advanceTimersByTime(0);
+  await setImmediate();
+  assert.equal(h.service.summaries().find((plugin) => plugin.id === pending.id).running, true);
+  for (const id of [paused.id, ignored.id])
+    assert.equal(h.service.summaries().find((plugin) => plugin.id === id).installed, false);
+  assert.equal(h.service.needsStartupCheck, false);
+  assert.deepEqual(
+    h.calls.filter((call) => call.startsWith("download:")),
+    ["download:pending.plugin"],
   );
 });

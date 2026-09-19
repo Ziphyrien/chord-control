@@ -115,19 +115,20 @@ export class ControllerApplication {
   }
   start(): void {
     this.publish();
-    this.schedule();
+    this.schedule(this.options.plugins.needsStartupCheck ? 0 : undefined);
   }
-  private schedule(): void {
+  private schedule(delay?: number): void {
     clearTimeout(this.timer);
     if (!this.stopped && !this.checking)
       this.timer = setTimeout(
         () => {
           void this.poll();
         },
-        Math.min(
-          this.options.plugins.settings.checkIntervalMinutes * 60_000 * 2 ** this.failures,
-          Math.max(this.options.plugins.settings.checkIntervalMinutes * 60_000, 60 * 60_000),
-        ),
+        delay ??
+          Math.min(
+            this.options.plugins.settings.checkIntervalMinutes * 60_000 * 2 ** this.failures,
+            Math.max(this.options.plugins.settings.checkIntervalMinutes * 60_000, 60 * 60_000),
+          ),
       );
   }
   private checkUpdates(validate: () => void = () => {}): Promise<{ failures: number }> {

@@ -18,7 +18,7 @@ import {
   installedGraph,
   reconcileCatalog,
 } from "../domain/reconciliation.ts";
-import { completed, hasUpdate, verifyRelease } from "../domain/releases.ts";
+import { automaticCandidates, completed, verifyRelease } from "../domain/releases.ts";
 import type {
   Archives,
   ConfigRepository,
@@ -52,6 +52,10 @@ export class PluginService {
   }
   get settings(): ControllerSettings {
     return this.dependencies.repository.snapshot().settings;
+  }
+  get needsStartupCheck(): boolean {
+    const config = this.dependencies.repository.snapshot();
+    return !config.plugins.length || automaticCandidates(config).length > 0;
   }
   summaries() {
     return describePlugins(
@@ -203,23 +207,17 @@ export class PluginService {
       await repository.commit(config);
       const next = structuredClone(config),
         prepared: string[] = [];
-      for (const plugin of next.plugins)
-        if (
-          plugin.enabled &&
-          !isIgnored(next, plugin) &&
-          next.settings.autoUpdate &&
-          hasUpdate(plugin)
-        ) {
-          try {
-            plugin.installed = await this.prepare(plugin);
-            plugin.updatedAt = new Date().toISOString();
-            prepared.push(plugin.id);
-          } catch (error) {
-            failures++;
-            this.lifecycle.errors.set(plugin.id, message(error));
-            log("插件准备失败", `${plugin.id}: ${message(error)}`, "error");
-          }
+      for (const plugin of automaticCandidates(next)) {
+        try {
+          plugin.installed = await this.prepare(plugin);
+          plugin.updatedAt = new Date().toISOString();
+          prepared.push(plugin.id);
+        } catch (error) {
+          failures++;
+          this.lifecycle.errors.set(plugin.id, message(error));
+          log("插件准备失败", `${plugin.id}: ${message(error)}`, "error");
         }
+      }
       if (!this.stopping) {
         // Unrelated plugin families must not fail together. Related candidates cut over together.
         for (const group of this.updateGroups(config, next, prepared)) {

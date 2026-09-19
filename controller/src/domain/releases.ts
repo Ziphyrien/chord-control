@@ -2,7 +2,7 @@ import type { PluginManifest } from "../../../shared/protocol.ts";
 import { assertManifest, compareVersion } from "../../../shared/plugin-format.ts";
 import { verifySigned } from "../../../shared/signing.ts";
 import { HOST_VERSION, CHORD_VERSION } from "../../../shared/versions.ts";
-import type { Registration } from "./configuration.ts";
+import { isIgnored, type Configuration, type Registration } from "./configuration.ts";
 
 export function verifyRelease(
   manifest: PluginManifest,
@@ -23,6 +23,12 @@ export function completed(manifest: PluginManifest): boolean {
   return Boolean(
     manifest.retireAfterHostVersion &&
     compareVersion(HOST_VERSION, manifest.retireAfterHostVersion) >= 0,
+  );
+}
+export function automaticCandidates(config: Configuration): Registration[] {
+  if (!config.settings.autoUpdate) return [];
+  return config.plugins.filter(
+    (plugin) => plugin.enabled && !isIgnored(config, plugin) && hasUpdate(plugin),
   );
 }
 export function hasUpdate(registration: Registration): boolean {

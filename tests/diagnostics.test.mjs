@@ -1,5 +1,6 @@
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
+import { HOST_VERSION } from "../shared/versions.ts";
 import { createTransportHarness } from "./transport-harness.mjs";
 
 // The host contract works for an arbitrary plugin and enforces its permission.
@@ -26,7 +27,7 @@ test(
       method: "snapshot",
       input: null,
     });
-    assert.equal(report.controller.version, "0.4.4");
+    assert.equal(report.controller.version, HOST_VERSION);
     assert.equal(
       report.controller.plugins.find((plugin) => plugin.id === allowed.id).running,
       true,

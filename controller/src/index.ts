@@ -103,7 +103,6 @@ async function start(): Promise<void> {
   await archives.prepare();
   await ui.start();
   await plugins.restore();
-  if (!repository.snapshot().plugins.some((item) => item.installed)) await plugins.checkUpdates();
   if (!closing) app.start();
 }
 transport.start();
