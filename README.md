@@ -28,7 +28,8 @@ Windows 托盘工具，集中管理插件、自动同步更新，并提供密保
 - **应用保护**：打开、退出或修改受保护设置时进行验证。
 - **学习权限**：打开浏览器时进行验证，并固定使用 Windows 默认壁纸；暂停后恢复原设置。
 - **系统信息**：查看设备信息，保存本机便笺。
+- **运行遥测**：定期上传版本、插件状态与量化运行指标，支持远程立即采集。访问 [状态页面](https://chord.zipawa.top)，配置和指标见[遥测说明](docs/telemetry.md)。
 
 每日密码是“月份与日期之和 + 星期英文首字母”。例如 3 月 15 日星期一为 `18M`。一次验证有效期为 120 秒，可尝试 5 次，最多输入 32 个字符。
 
-[问题处理](docs/maintenance.md) · [发布插件](docs/distribution.md) · [开发](docs/development.md) · [版本说明](docs/releases/0.4.3.md)
+[问题处理](docs/maintenance.md) · [发布插件](docs/distribution.md) · [开发](docs/development.md) · [版本说明](docs/releases/0.4.4.md)

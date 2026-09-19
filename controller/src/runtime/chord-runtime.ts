@@ -14,6 +14,11 @@ import {
 } from "@earendil-works/chord/context";
 import { createFacetBundleLoader } from "@earendil-works/chord/node";
 import { ControlHost, Lifecycle, PluginUi } from "../../../sdk/index.ts";
+import {
+  HostDiagnostics,
+  PluginDiagnostics,
+  isDiagnosticSnapshot,
+} from "../../../sdk/diagnostics.ts";
 import type { Json, PluginManifest } from "../../../shared/protocol.ts";
 import { safePath } from "../../../shared/plugin-format.ts";
 import { jsonValue, message } from "../../../shared/validation.ts";
@@ -23,6 +28,7 @@ import type { NativeBridge } from "../transport/native-bridge.ts";
 import { ServiceDirectory } from "./services.ts";
 import { HostKernel } from "../../../sdk/kernel.ts";
 import { KernelCaller, KernelSession } from "./kernel-session.ts";
+import { OperationMetrics } from "../infrastructure/operation-metrics.ts";
 
 interface Access {
   phase: "starting" | "active" | "stopping" | "closed";
@@ -42,15 +48,20 @@ interface Options {
   native: NativeBridge;
   log(id: string, detail: string): void;
   present(id: string, visible: boolean): Promise<void>;
+  snapshot?(): Json;
+  metrics?: OperationMetrics;
 }
 /** Chord is an adapter. Dependency and update policy belong to the application layer. */
 export class ChordRuntime implements PluginRuntime {
   private readonly running = new Map<string, Generation>();
   private readonly retired = new Set<string>();
+  private collecting = false;
   private readonly services = new ServiceDirectory();
   private readonly options: Options;
+  private readonly metrics: OperationMetrics;
   constructor(options: Options) {
     this.options = options;
+    this.metrics = options.metrics ?? new OperationMetrics();
   }
   has(id: string): boolean {
     return this.running.has(id);
@@ -63,7 +74,12 @@ export class ChordRuntime implements PluginRuntime {
     if (!current) throw new Error(`插件未运行: ${id}`);
     return current;
   }
-  async activate(manifest: PluginManifest, archive: Uint8Array): Promise<void> {
+  activate(manifest: PluginManifest, archive: Uint8Array): Promise<void> {
+    return this.metrics.measure(manifest.id, "activate", () =>
+      this.activateGeneration(manifest, archive),
+    );
+  }
+  private async activateGeneration(manifest: PluginManifest, archive: Uint8Array): Promise<void> {
     if (this.has(manifest.id)) throw new Error(`插件必须先停止: ${manifest.id}`);
     if (this.retired.has(manifest.id))
       throw new Error(`插件资源清理未完成，请重启控制器: ${manifest.id}`);
@@ -105,6 +121,31 @@ export class ChordRuntime implements PluginRuntime {
               if (access.phase === "stopping" || access.phase === "closed") return;
               visible = next;
               if (access.phase === "active") await this.options.present(manifest.id, next);
+            },
+          });
+          env.provide(HostDiagnostics, {
+            snapshot: async (context) => {
+              if (access.phase !== "active" || !manifest.permissions?.includes("diagnostics"))
+                throw new Error("插件没有诊断读取权限或已停止");
+              const controller = this.options.snapshot?.() ?? { error: "主程序诊断不可用" };
+              let native: Json;
+              try {
+                native = await this.options.native.call(
+                  manifest.id,
+                  manifest.permissions,
+                  "diagnostics.snapshot",
+                  null,
+                  context.abortSignal,
+                );
+              } catch (error) {
+                native = { error: message(error) };
+              }
+              return {
+                controller,
+                native,
+                metrics: this.metrics.snapshot(),
+                plugins: await this.diagnostics(context.abortSignal),
+              };
             },
           });
           env.provide(HostKernel, {
@@ -166,7 +207,10 @@ export class ChordRuntime implements PluginRuntime {
       throw error;
     }
   }
-  async deactivate(id: string): Promise<void> {
+  deactivate(id: string): Promise<void> {
+    return this.metrics.measure(id, "deactivate", () => this.deactivateGeneration(id));
+  }
+  private async deactivateGeneration(id: string): Promise<void> {
     const current = this.running.get(id);
     if (!current) return;
     current.access.phase = "stopping";
@@ -195,6 +239,45 @@ export class ChordRuntime implements PluginRuntime {
       throw new AggregateError(failures, `${id} 清理失败: ${failures.map(message).join("；")}`);
     }
   }
+  private async diagnostics(signal?: AbortSignal): Promise<Json> {
+    if (this.collecting) return { unavailable: { error: "已有插件诊断正在进行" } };
+    this.collecting = true;
+    try {
+      return await this.collectDiagnostics(signal);
+    } finally {
+      this.collecting = false;
+    }
+  }
+  private async collectDiagnostics(signal?: AbortSignal): Promise<Json> {
+    const result: Record<string, Json> = {};
+    const deadline = AbortSignal.any([AbortSignal.timeout(10_000), ...(signal ? [signal] : [])]);
+    let bytes = 0;
+    for (const [id, generation] of this.running) {
+      if (
+        !generation.host.services.catalogue.some((item) => item.serviceId === PluginDiagnostics.id)
+      )
+        continue;
+      const context = withAbortSignal(
+        AbortSignal.any([generation.lifetime.signal, AbortSignal.timeout(5000), deadline]),
+        BACKGROUND_CONTEXT,
+      );
+      try {
+        const value = await awaitWithContext(
+          generation.host.services.use(PluginDiagnostics).snapshot(context),
+          context,
+        );
+        if (!isDiagnosticSnapshot(value) || Buffer.byteLength(JSON.stringify(value)) > 16000)
+          throw new Error("插件诊断超出限制");
+        bytes += Buffer.byteLength(JSON.stringify(value));
+        if (bytes > 48 * 1024) throw new Error("插件诊断总量超出限制");
+        result[id] = value;
+      } catch (error) {
+        result[id] = { error: message(error).slice(0, 1000) };
+      }
+      if (deadline.aborted || bytes > 48 * 1024) break;
+    }
+    return result;
+  }
   async ui(id: string): Promise<PluginPage> {
     const generation = this.current(id);
     if (!generation.manifest.ui) throw new Error("插件没有界面");
@@ -203,7 +286,10 @@ export class ChordRuntime implements PluginRuntime {
       revision: generation.manifest.artifactSha256,
     };
   }
-  async before(id: string, action: string, input: Json): Promise<boolean> {
+  before(id: string, action: string, input: Json): Promise<boolean> {
+    return this.metrics.measure(id, "authorize", () => this.authorize(id, action, input));
+  }
+  private async authorize(id: string, action: string, input: Json): Promise<boolean> {
     const generation = this.current(id);
     const context = withAbortSignal(
       AbortSignal.any([generation.lifetime.signal, AbortSignal.timeout(120_000)]),
@@ -215,7 +301,10 @@ export class ChordRuntime implements PluginRuntime {
     );
     return result === true;
   }
-  async call(id: string, method: string, input: Json): Promise<Json> {
+  call(id: string, method: string, input: Json): Promise<Json> {
+    return this.metrics.measure(id, "rpc", () => this.invoke(id, method, input));
+  }
+  private async invoke(id: string, method: string, input: Json): Promise<Json> {
     const generation = this.current(id);
     const context = withAbortSignal(
       AbortSignal.any([generation.lifetime.signal, AbortSignal.timeout(30_000)]),

@@ -12,6 +12,9 @@ import { ActivityLog, serialQueue } from "./application/execution.ts";
 import { PluginService } from "./application/plugin-service.ts";
 import { ControllerApplication } from "./application/controller.ts";
 import { object } from "../../shared/validation.ts";
+import type { Json } from "../../shared/protocol.ts";
+import { operationalSnapshot } from "./application/diagnostics.ts";
+import { OperationMetrics } from "./infrastructure/operation-metrics.ts";
 
 // The executable entry is the only module that owns process globals and transport wiring.
 console = new Console({ stdout: process.stderr, stderr: process.stderr });
@@ -23,11 +26,14 @@ const repository = new ConfigStore(root, allowUnsigned),
   source = new SignedReleaseSource(allowUnsigned);
 const activity = new ActivityLog(),
   gate = serialQueue();
-const native = new NativeBridge((value) => transport.emit(value));
-const runtime = new ChordRuntime({
+const metrics = new OperationMetrics();
+const native = new NativeBridge((value) => transport.emit(value), metrics);
+const runtime: ChordRuntime = new ChordRuntime({
   staging: archives.staging,
   data: join(root, "data"),
   native,
+  metrics,
+  snapshot: (): Json => operationalSnapshot(app.snapshot()),
   log: (id, detail) => activity.add("插件日志", `${id}: ${detail}`),
   present: async (id, visible) => {
     const plugin = repository.snapshot().plugins.find((item) => item.id === id);
@@ -43,7 +49,7 @@ const runtime = new ChordRuntime({
   },
 });
 const ui = new PluginHttpServer(runtime, gate);
-const plugins = new PluginService({
+const plugins: PluginService = new PluginService({
   repository,
   archives,
   source,
@@ -52,7 +58,7 @@ const plugins = new PluginService({
   log: activity.add,
   allowUnsigned,
 });
-const app = new ControllerApplication({
+const app: ControllerApplication = new ControllerApplication({
   plugins,
   runtime,
   gate,

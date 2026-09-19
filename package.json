@@ -1,10 +1,11 @@
 {
   "name": "chord-control",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "description": "Windows control center for Chord plugins",
   "workspaces": [
-    "plugins/*"
+    "plugins/*",
+    "services/*"
   ],
   "type": "module",
   "scripts": {

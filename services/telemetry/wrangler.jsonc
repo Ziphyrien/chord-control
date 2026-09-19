@@ -1,0 +1,64 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "chord-telemetry",
+  "main": "src/index.ts",
+  "account_id": "6c436b9d50b7a068e4ea18fba6c7f7b1",
+  "compatibility_date": "2026-09-19",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "chord.zipawa.top/*",
+      "zone_name": "zipawa.top",
+      "custom_domain": false,
+    },
+  ],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "chord-telemetry",
+      "database_id": "943bb764-9fb7-48fd-9e10-7ee905142308",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CONNECTIONS",
+        "class_name": "DeviceConnection",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["DeviceConnection"],
+    },
+  ],
+  "secrets": {
+    "required": ["ADMIN_TOKEN"],
+  },
+  "ratelimits": [
+    {
+      "name": "RATE_LIMIT",
+      "namespace_id": "31415",
+      "simple": {
+        "limit": 120,
+        "period": 60,
+      },
+    },
+  ],
+  "triggers": {
+    "crons": ["17 3 * * *"],
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+}

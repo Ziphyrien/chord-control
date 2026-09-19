@@ -17,6 +17,7 @@ export interface StudyPlatform {
   start(blocked: (browser: Browser) => void): Promise<void>;
   launch(browser: Browser): Promise<void>;
   dispose(): Promise<void>;
+  measure(): Promise<{ checks: number; passed: number; owned: boolean; errors: string[] }>;
 }
 export function createPlatform(
   host: HostService,
@@ -87,6 +88,7 @@ export function createPlatform(
     throw new Error("未找到已安装的浏览器");
   }
   return {
+    measure: () => serialize(() => policy.measure()),
     start(blocked) {
       return serialize(async () => {
         if (disposed) throw new Error("学习权限已停止");

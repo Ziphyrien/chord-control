@@ -3,6 +3,7 @@ import type { Json } from "../../../shared/protocol.ts";
 import { jsonValue, object, message } from "../../../shared/validation.ts";
 
 const grants: Readonly<Record<string, string>> = {
+  "diagnostics.snapshot": "diagnostics",
   "registry.read": "registry-current-user",
   "registry.write": "registry-current-user",
   "wallpaper.get": "wallpaper",
@@ -14,6 +15,8 @@ const grants: Readonly<Record<string, string>> = {
   "host.call": "host-control",
   "host.close": "host-control",
 };
+import { OperationMetrics } from "../infrastructure/operation-metrics.ts";
+
 interface Pending {
   settle(result: { ok: true; value: Json } | { ok: false; error: Error }): void;
 }
@@ -22,10 +25,23 @@ export class NativeBridge {
   private readonly pending = new Map<string, Pending>();
   private readonly emit: (value: object) => void;
   private closed = false;
-  constructor(emit: (value: object) => void) {
+  private readonly metrics: OperationMetrics;
+  constructor(emit: (value: object) => void, metrics = new OperationMetrics()) {
     this.emit = emit;
+    this.metrics = metrics;
   }
   call(
+    pluginId: string,
+    permissions: readonly string[],
+    operation: string,
+    input: Json,
+    signal?: AbortSignal,
+  ): Promise<Json> {
+    return this.metrics.measure(pluginId, operation, () =>
+      this.request(pluginId, permissions, operation, input, signal),
+    );
+  }
+  private request(
     pluginId: string,
     permissions: readonly string[],
     operation: string,

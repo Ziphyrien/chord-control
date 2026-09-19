@@ -9,6 +9,9 @@ release/
 
 # Machine-local work, credentials, and diagnostics
 .local/
+.wrangler/
+.dev.vars
+.dev.vars.*
 .pi/
 .env
 .env.*

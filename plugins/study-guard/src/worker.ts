@@ -1,5 +1,6 @@
 import { defineFacet } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
+import { PluginDiagnostics } from "../../../sdk/diagnostics.ts";
 import { ControlHost, PluginUi } from "../../../sdk/index.ts";
 import { message } from "../../../shared/validation.ts";
 import { PasswordPrompt } from "../../password-pad/contract.ts";
@@ -15,6 +16,7 @@ export default defineFacet({
     let platform: StudyPlatform | undefined;
     let active = false;
     let last = "";
+    const since = new Date().toISOString();
     const status = () => ({ active, pending: [...pending.keys()], last });
     const log = (message: string) => {
       last = message;
@@ -59,6 +61,29 @@ export default defineFacet({
         active = false;
         throw error;
       }
+    });
+    env.provide(PluginDiagnostics, {
+      async snapshot() {
+        if (!platform) throw new Error("学习权限尚未启动");
+        const result = await platform.measure();
+        return {
+          since,
+          observedAt: new Date().toISOString(),
+          lastError: result.errors.join("; ") || null,
+          metrics: [
+            { name: "policy.checks", kind: "gauge", value: result.checks, unit: "count" },
+            { name: "policy.passed", kind: "gauge", value: result.passed, unit: "count" },
+            {
+              name: "policy.complianceRatio",
+              kind: "gauge",
+              value: result.checks ? result.passed / result.checks : null,
+              unit: "ratio",
+            },
+            { name: "policy.owned", kind: "gauge", value: result.owned ? 1 : 0, unit: "boolean" },
+            { name: "authorization.pending", kind: "gauge", value: pending.size, unit: "count" },
+          ],
+        };
+      },
     });
     env.provide(PluginUi, {
       async call(method, input) {

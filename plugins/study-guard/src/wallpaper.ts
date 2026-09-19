@@ -177,6 +177,23 @@ export class WallpaperPolicy {
       }
     });
   }
+  async measure(): Promise<{ checks: number; passed: number; owned: boolean; errors: string[] }> {
+    const target = await stockWallpaper(this.systemRoot());
+    const values = policyValues(target),
+      errors: string[] = [];
+    let passed = 0;
+    if (
+      (await this.wallpaper()).replaceAll("/", "\\").toLowerCase() ===
+      target.replaceAll("/", "\\").toLowerCase()
+    )
+      passed++;
+    else errors.push("wallpaper.current_mismatch");
+    for (const [index, [path, name]] of POLICY_KEYS.entries()) {
+      if (sameValue(await this.readEntry({ path, name }), values[index])) passed++;
+      else errors.push(`policy.${name}.mismatch`);
+    }
+    return { checks: 1 + POLICY_KEYS.length, passed, owned: await this.owns(), errors };
+  }
   async restore(): Promise<void> {
     await withJournalLock(this.directory, async () => {
       if (!(await this.owns())) return;

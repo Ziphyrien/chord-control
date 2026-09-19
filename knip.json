@@ -27,6 +27,12 @@
       ],
       "ignore": ["**/*.d.ts", "**/*.d.mts"]
     },
+    "services/*": {
+      "entry": ["src/index.ts", "public/app.js"],
+      "project": ["src/**/*.ts", "public/*.js"],
+      "ignore": ["worker-configuration.d.ts"],
+      "ignoreDependencies": ["cloudflare"]
+    },
     "plugins/*": {
       "entry": ["src/worker.ts", "ui/main.ts", "contract.ts"],
       "project": ["src/**/*.ts", "ui/**/*.ts", "contract.ts"]

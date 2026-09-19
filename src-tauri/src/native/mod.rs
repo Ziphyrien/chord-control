@@ -1,5 +1,6 @@
 //! Capability transport only. Grants are checked by the controller; this boundary checks
 //! the declared capability and input shape without knowing any plugin's policy.
+mod diagnostics;
 #[cfg(windows)]
 pub(crate) mod process;
 #[cfg(windows)]
@@ -155,7 +156,21 @@ pub(crate) fn handle(app: &AppHandle, value: &Value, generation: Generation) -> 
             if !crate::controller::is_current(&ticket.app, ticket.generation) {
                 return;
             }
-            let result = request.execute();
+            let result = if request.operation == "diagnostics.snapshot" {
+                if request.kind != "native_request"
+                    || !crate::wire::valid_plugin_id(&request.plugin_id)
+                    || request.id.is_empty()
+                    || request.id.len() > 100
+                    || request.permission != "diagnostics"
+                    || !request.input.is_null()
+                {
+                    Err("无效诊断请求".into())
+                } else {
+                    Ok(diagnostics::snapshot(&ticket.app))
+                }
+            } else {
+                request.execute()
+            };
             reply(&ticket.app, ticket.generation, &ticket.id, result);
             // Individual Win32 APIs may not be interruptible. Never join these on shutdown;
             // the global ticket cap bounds them even across controller restarts.

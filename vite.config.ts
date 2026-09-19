@@ -12,6 +12,8 @@ const generated = [
   ".local/**",
   "src-tauri/target/**",
   "src-tauri/gen/**",
+  "services/telemetry/worker-configuration.d.ts",
+  "services/telemetry/.wrangler/**",
 ];
 
 export default defineConfig({
