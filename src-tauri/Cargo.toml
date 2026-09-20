@@ -1,6 +1,6 @@
 [package]
 name = "chord-control"
-version = "0.4.6"
+version = "0.4.7"
 description = "Current-user Windows host for Chord plugins"
 authors = ["Chord Control"]
 edition = "2021"

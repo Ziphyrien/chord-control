@@ -18,9 +18,12 @@ use tauri::{Manager, WindowEvent};
 /// CLI roles return before creating windows or entering single-instance handling.
 /// Startup failures are returned to the executable so they cannot bypass guard cleanup.
 pub fn run() -> Result<(), String> {
-    if guard::handle_cli()? {
+    if guard::handle_cli().inspect_err(|error| {
+        updater::diagnostics::record("cli_failed", None, serde_json::json!({"error": error}));
+    })? {
         return Ok(());
     }
+    updater::diagnostics::record("startup_started", None, serde_json::json!({}));
     let app = tauri::Builder::default()
         // A second launch cannot unlock/show the existing main window or invoke a hook.
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
@@ -51,9 +54,17 @@ pub fn run() -> Result<(), String> {
             if let Err(error) = desktop::ensure_autostart(app.handle()) {
                 desktop::report(app.handle(), &error);
             }
-            if let Err(error) = controller::start_controller(app.handle()) {
-                desktop::report(app.handle(), &error);
+            let controller = controller::start_controller(app.handle());
+            if let Err(error) = &controller {
+                desktop::report(app.handle(), error);
             }
+            updater::diagnostics::record(
+                "startup_ready",
+                None,
+                serde_json::json!({
+                    "controller_started": controller.is_ok(), "controller_error": controller.err()
+                }),
+            );
             updater::start(app.handle());
             Ok(())
         })
@@ -72,10 +83,19 @@ pub fn run() -> Result<(), String> {
     match app {
         Ok(app) => app.run(|app, event| match event {
             tauri::RunEvent::ExitRequested { api, .. } => lifecycle::exit_requested(app, &api),
-            tauri::RunEvent::Exit => lifecycle::final_cleanup(app),
+            tauri::RunEvent::Exit => {
+                updater::diagnostics::record("event_loop_exit", None, serde_json::json!({}));
+                lifecycle::final_cleanup(app);
+                updater::diagnostics::record("cleanup_finished", None, serde_json::json!({}));
+            }
             _ => {}
         }),
         Err(error) => {
+            updater::diagnostics::record(
+                "startup_failed",
+                None,
+                serde_json::json!({"error": error.to_string()}),
+            );
             let _ = guard::stop();
             return Err(error.to_string());
         }

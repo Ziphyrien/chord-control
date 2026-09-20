@@ -45,6 +45,9 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+      - name: Test installer diagnostics (NSIS executable)
+        shell: cmd
+        run: node scripts/test-installer-diagnostics.mjs
       - name: Test generic native failure facts
         run: cargo test --release --manifest-path src-tauri/Cargo.toml --lib native::failures::tests
       - name: Test native update routing

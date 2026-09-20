@@ -1,4 +1,5 @@
 //! Signed host updates. Downloads finish before peers or plugins are stopped.
+pub(crate) mod diagnostics;
 mod network;
 mod policy;
 use crate::sync::lock;
@@ -97,7 +98,7 @@ fn stage(_app: &AppHandle, _bytes: &[u8]) -> Result<PathBuf, String> {
     Err("主程序更新仅支持 Windows".into())
 }
 
-fn launch_installer(path: &std::path::Path) -> Result<(), String> {
+fn launch_installer(path: &std::path::Path) -> Result<u32, String> {
     // Command uses CreateProcessW on Windows: current user's token, no COM, no runas,
     // no arbitrary wait on an Explorer ShellExecute call. The installer starts a fresh
     // hidden session after replacement; original process arguments are never replayed.
@@ -112,13 +113,17 @@ fn launch_installer(path: &std::path::Path) -> Result<(), String> {
         use std::os::windows::process::CommandExt;
         command.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
     }
-    command.spawn().map(|_| ()).map_err(|e| e.to_string())
+    command
+        .spawn()
+        .map(|child| child.id())
+        .map_err(|e| e.to_string())
 }
 async fn check(
     app: &AppHandle,
     install: bool,
     require_unlock: bool,
     automatic: bool,
+    trace: &diagnostics::Attempt,
 ) -> Result<(), String> {
     let update = network::check(app).await?;
     let Some(update) = update else {
@@ -130,6 +135,10 @@ async fn check(
         }
         return Ok(());
     };
+    trace.event(
+        "update_available",
+        json!({"target_version": update.version}),
+    );
     lock(&app.state::<UpdateState>().progress).version = Some(update.version.clone());
     if !install || (automatic && !automatic_install_enabled(app)) {
         if let Some(tray) = app.tray_by_id("controller") {
@@ -140,9 +149,14 @@ async fn check(
         }
         return Ok(());
     }
+    trace.event(
+        "download_started",
+        json!({"target_version": update.version}),
+    );
     let bytes = tokio::time::timeout(Duration::from_secs(180), network::download(&update))
         .await
         .map_err(|_| "下载更新超时".to_owned())??;
+    trace.event("download_verified", json!({"bytes": bytes.len()}));
     if automatic && !automatic_install_enabled(app) {
         return Ok(());
     }
@@ -151,6 +165,7 @@ async fn check(
     {
         return Err("控制中心已锁定，请重新解锁后安装更新".into());
     }
+    trace.event("staging_started", json!({}));
     let handle = app.clone();
     let staging = tauri::async_runtime::spawn_blocking(move || stage(&handle, &bytes));
     let path = match tokio::time::timeout(Duration::from_secs(30), staging).await {
@@ -163,6 +178,7 @@ async fn check(
             return Err("写入更新超时，请重新启动主程序后重试".into());
         }
     };
+    trace.event("installer_staged", json!({"path": path}));
     if automatic && !automatic_install_enabled(app) {
         let _ = fs::remove_file(&path);
         return Ok(());
@@ -174,18 +190,32 @@ async fn check(
         return Err("控制中心已锁定，更新已取消".into());
     }
     let handle = app.clone();
+    let trace = trace.clone();
     tauri::async_runtime::spawn_blocking(move || {
         if automatic && !automatic_install_enabled(&handle) {
             let _ = fs::remove_file(&path);
             return Ok(());
         }
-        let result =
-            crate::lifecycle::prepare_update(&handle).and_then(|()| launch_installer(&path));
+        trace.event("prepare_started", json!({}));
+        let result = crate::lifecycle::prepare_update(&handle).and_then(|()| {
+            trace.event("prepare_finished", json!({}));
+            trace.event("installer_spawn_requested", json!({"path": path}));
+            launch_installer(&path)
+        });
         match result {
-            Ok(()) => crate::lifecycle::update_launched(&handle),
+            Ok(pid) => {
+                trace.event(
+                    "installer_spawned",
+                    json!({"installer_pid": pid, "path": path}),
+                );
+                trace.event("host_exit_requested", json!({}));
+                crate::lifecycle::update_launched(&handle);
+            }
             Err(error) => {
+                trace.event("handoff_failed", json!({"error": error}));
                 let _ = fs::remove_file(path);
                 crate::lifecycle::update_failed(&handle);
+                trace.event("host_recovery_requested", json!({}));
                 return Err(error);
             }
         }
@@ -206,7 +236,12 @@ fn begin(app: &AppHandle) -> Result<bool, String> {
     Ok(true)
 }
 async fn finish(app: &AppHandle, install: bool, require_unlock: bool, automatic: bool) {
-    let result = check(app, install, require_unlock, automatic).await;
+    let trace = diagnostics::Attempt::new(install, automatic);
+    let result = check(app, install, require_unlock, automatic, &trace).await;
+    trace.event(
+        "check_finished",
+        json!({"ok": result.is_ok(), "error": result.as_ref().err()}),
+    );
     let state = app.state::<UpdateState>();
     {
         let mut progress = lock(&state.progress);

@@ -1,26 +1,34 @@
 ; Maintenance and first-run startup are separate transactions from file replacement.
+!include "${__FILEDIR__}\diagnostics.nsh"
 !macro NSIS_HOOK_PREINSTALL
   ${If} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
     ; The helper revokes before draining and has a 45s deadline. nsExec also bounds
     ; a loader failure; installer errors cannot silently replace a running host.
+    !insertmacro InstallerLog "maintenance_begin" "requested" "$INSTDIR\${MAINBINARYNAME}.exe"
     nsExec::ExecToStack /TIMEOUT=50000 '"$INSTDIR\${MAINBINARYNAME}.exe" --maintenance-stop'
     Pop $0
     Pop $1
+    ; Child output is deliberately excluded (may contain private application data).
+    !insertmacro InstallerLog "maintenance_end" "exitcode=$0" "$INSTDIR\${MAINBINARYNAME}.exe"
     ${If} $0 != "0"
       SetErrorLevel 1
       Abort "Chord Control could not stop for maintenance. Close it and retry."
     ${EndIf}
+  ${Else}
+    !insertmacro InstallerLog "maintenance_skipped" "no_existing_binary" "$INSTDIR\${MAINBINARYNAME}.exe"
   ${EndIf}
   ; Legacy hosts may not understand maintenance-stop. Do not kill processes by name:
   ; that can interrupt another installation and bypass plugin restoration.
   nsis_tauri_utils::FindProcessCurrentUser "${MAINBINARYNAME}.exe"
   Pop $0
+  !insertmacro InstallerLog "host_process_check" "result=$0" "$INSTDIR\${MAINBINARYNAME}.exe"
   ${If} $0 = 0
     SetErrorLevel 1
     Abort "Close Chord Control before installing this update."
   ${EndIf}
   nsis_tauri_utils::FindProcessCurrentUser "plugin-controller.exe"
   Pop $0
+  !insertmacro InstallerLog "controller_process_check" "result=$0" "$INSTDIR\plugin-controller.exe"
   ${If} $0 = 0
     SetErrorLevel 1
     Abort "Chord Control is still shutting down. Please retry."
@@ -34,6 +42,7 @@
   ${If} $1 == '$$"'
     ClearErrors
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Chord Control" '"$INSTDIR\${MAINBINARYNAME}.exe" --background'
+    !insertmacro InstallerLogResult "startup_repair_write" "$INSTDIR"
     ${If} ${Errors}
       SetErrorLevel 1
       Abort "Could not save startup settings. Please retry."
@@ -44,17 +53,20 @@
     ClearErrors
     CreateDirectory "$LOCALAPPDATA\ChordControl"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Chord Control" '"$INSTDIR\${MAINBINARYNAME}.exe" --background'
+    !insertmacro InstallerLogResult "startup_enable_write" "$INSTDIR"
     ${If} ${Errors}
       SetErrorLevel 1
       Abort "Could not enable automatic startup. Please retry."
     ${EndIf}
     FileOpen $0 "$LOCALAPPDATA\ChordControl\first-run-complete" w
+    !insertmacro InstallerLogResult "startup_marker_open" "$LOCALAPPDATA\ChordControl\first-run-complete"
     ${If} ${Errors}
       SetErrorLevel 1
       Abort "Could not save startup settings. Check folder permissions and retry."
     ${EndIf}
     FileWrite $0 "1"
     FileClose $0
+    !insertmacro InstallerLogResult "startup_marker_write" "$LOCALAPPDATA\ChordControl\first-run-complete"
     ${If} ${Errors}
       SetErrorLevel 1
       Abort "Could not save startup settings. Check folder permissions and retry."

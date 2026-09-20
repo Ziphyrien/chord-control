@@ -25,6 +25,7 @@ RequestExecutionLevel user
 !define WEBVIEWMODE "{{install_webview2_mode}}"
 !define WEBVIEWARGS "{{webview2_installer_args}}"
 !define MINWEBVIEW "{{minimum_webview2_version}}"
+!define INSTALLER_DIAGNOSTIC_VERSION "{{version}}"
 {{#if installer_hooks}}
 !include "{{installer_hooks}}"
 {{/if}}
@@ -62,6 +63,7 @@ Function SkipIfPassive
 FunctionEnd
 Function .onInit
   SetShellVarContext current
+  !insertmacro InstallerLog "init" "entered" "$EXEPATH"
   !if "{{arch}}" == "x64"
     SetRegView 64
   !else if "{{arch}}" == "arm64"
@@ -82,6 +84,21 @@ Function .onInit
       StrCpy $INSTDIR $0
     ${EndIf}
   ${EndIf}
+  !insertmacro InstallerLog "install_target" "selected" "$INSTDIR"
+FunctionEnd
+
+Function .onInstFailed
+  Push $0
+  GetErrorLevel $0
+  !insertmacro InstallerLog "installer_failed" "exitcode=$0" "$INSTDIR"
+  Pop $0
+FunctionEnd
+
+Function .onInstSuccess
+  Push $0
+  GetErrorLevel $0
+  !insertmacro InstallerLog "installer_succeeded" "exitcode=$0" "$INSTDIR"
+  Pop $0
 FunctionEnd
 
 Function ReadWebViewVersion
@@ -97,14 +114,21 @@ Function ReadWebViewVersion
   ${EndIf}
 FunctionEnd
 Section "WebView2 runtime"
+  !insertmacro InstallerLog "runtime_begin" "${WEBVIEWMODE}" "$INSTDIR"
   !if "${WEBVIEWMODE}" != "skip"
   !if "${WEBVIEWMODE}" != "fixedRuntime"
     Call ReadWebViewVersion
+    ${If} $WebViewVersion == ""
+      !insertmacro InstallerLog "runtime_detected" "missing" "$INSTDIR"
+    ${Else}
+      !insertmacro InstallerLog "runtime_detected" "present" "$INSTDIR"
+    ${EndIf}
     ${If} $WebViewVersion != ""
       !if "${MINWEBVIEW}" == ""
         Goto runtime_ready
       !else
         ${VersionCompare} "$WebViewVersion" "${MINWEBVIEW}" $0
+        !insertmacro InstallerLog "runtime_version_compare" "$0" "$INSTDIR"
         ${If} $0 != 2
           Goto runtime_ready
         ${EndIf}
@@ -112,6 +136,7 @@ Section "WebView2 runtime"
     ${EndIf}
     InitPluginsDir
     !if "${WEBVIEWMODE}" == "downloadBootstrapper"
+      !insertmacro InstallerLog "runtime_download_begin" "requested" "$PLUGINSDIR\WebViewSetup.exe"
       ${If} ${Silent}
         NSISdl::download_quiet /TIMEOUT=90000 "https://go.microsoft.com/fwlink/p/?LinkId=2124703" "$PLUGINSDIR\WebViewSetup.exe"
       ${Else}
@@ -119,9 +144,11 @@ Section "WebView2 runtime"
       ${EndIf}
       Pop $0
       ${If} $0 != "success"
+        !insertmacro InstallerLog "runtime_download_end" "error" "$PLUGINSDIR\WebViewSetup.exe"
         SetErrorLevel 1
         Abort "Could not download Microsoft WebView2. Install it and retry."
       ${EndIf}
+      !insertmacro InstallerLog "runtime_download_end" "ok" "$PLUGINSDIR\WebViewSetup.exe"
     !else if "${WEBVIEWMODE}" == "embedBootstrapper"
       File "/oname=$PLUGINSDIR\WebViewSetup.exe" "{{webview2_bootstrapper_path}}"
     !else if "${WEBVIEWMODE}" == "offlineInstaller"
@@ -129,6 +156,7 @@ Section "WebView2 runtime"
     !else
       !error "Unsupported WebView2 installation mode"
     !endif
+    !insertmacro InstallerLog "runtime_install_begin" "requested" "$PLUGINSDIR\WebViewSetup.exe"
     ; Never invoke a machine updater or request elevation. This child inherits our user token.
     ${If} ${Silent}
       nsExec::ExecToStack /TIMEOUT=180000 '"$PLUGINSDIR\WebViewSetup.exe" /silent /install'
@@ -137,16 +165,19 @@ Section "WebView2 runtime"
     ${EndIf}
     Pop $0
     Pop $1
+    !insertmacro InstallerLog "runtime_install_end" "exitcode=$0" "$PLUGINSDIR\WebViewSetup.exe"
     ${If} $0 != "0"
       SetErrorLevel 1
       Abort "Microsoft WebView2 installation did not complete. Install it and retry."
     ${EndIf}
     Call ReadWebViewVersion
     ${If} $WebViewVersion == ""
+      !insertmacro InstallerLog "runtime_verify" "missing" "$INSTDIR"
       SetErrorLevel 1
       Abort "Microsoft WebView2 was not detected after installation."
     ${EndIf}
     runtime_ready:
+    !insertmacro InstallerLog "runtime_ready" "present" "$INSTDIR"
   !endif
   !endif
 SectionEnd
@@ -154,6 +185,7 @@ SectionEnd
 Section "Chord Control"
   ; Download/runtime preparation precedes stopping the old installation.
   !insertmacro NSIS_HOOK_PREINSTALL
+  !insertmacro InstallerLog "files_begin" "requested" "$INSTDIR"
   ClearErrors
   SetOutPath "$INSTDIR"
   File "{{main_binary_path}}"
@@ -166,10 +198,12 @@ Section "Chord Control"
   {{#each binaries}}
     File /a "/oname={{this}}" "{{no-escape @key}}"
   {{/each}}
+  !insertmacro InstallerLogResult "files_end" "$INSTDIR"
   ${If} ${Errors}
     SetErrorLevel 1
     Abort "Could not replace application files. Close Chord Control and retry."
   ${EndIf}
+  !insertmacro InstallerLog "metadata_begin" "requested" "$INSTDIR"
   ; Remove only the previous installation's legacy shell registrations.
   ReadRegStr $0 HKCU "${MANUPRODUCTKEY}" ""
   ${If} $0 == $INSTDIR
@@ -181,17 +215,23 @@ Section "Chord Control"
   ClearErrors
   WriteRegStr HKCU "${MANUPRODUCTKEY}" "" "$INSTDIR"
   WriteRegStr HKCU "${MANUPRODUCTKEY}" "Version" "{{version}}"
+  !insertmacro InstallerLogResult "metadata_end" "$INSTDIR"
   ${If} ${Errors}
     SetErrorLevel 1
     Abort "Could not save current-user installation metadata."
   ${EndIf}
   !insertmacro NSIS_HOOK_POSTINSTALL
   ; Launch as soon as installation succeeds, before displaying the finish page.
+  !insertmacro InstallerLog "launch_requested" "requested" "$INSTDIR\${MAINBINARYNAME}.exe"
   ClearErrors
   Exec '"$INSTDIR\${MAINBINARYNAME}.exe" --background'
   ${If} ${Errors}
+    !insertmacro InstallerLog "launch_failed" "nsis_error" "$INSTDIR\${MAINBINARYNAME}.exe"
     DetailPrint "Could not start Chord Control. Open it from the installation folder."
     MessageBox MB_OK|MB_ICONEXCLAMATION "安装已完成，但程序未能启动。请从安装目录打开 Chord Control。" /SD IDOK
+  ${Else}
+    ; Exec only confirms CreateProcess; the host records startup_ready separately.
+    !insertmacro InstallerLog "application_spawned" "ok" "$INSTDIR\${MAINBINARYNAME}.exe"
   ${EndIf}
   ${If} $PassiveMode = 1
     SetAutoClose true

@@ -14,7 +14,12 @@ pub(crate) fn append(path: &Path, bytes: &[u8]) {
         let _ = fs::rename(path, previous);
     }
     if let Ok(mut file) = OpenOptions::new().append(true).create(true).open(path) {
-        let _ = file.write_all(&bytes[..bytes.len().min(64 * 1024)]);
-        let _ = file.write_all(b"\n");
+        // Keep the newline in the same append as its record: shutdown and startup
+        // can write diagnostics concurrently from different processes.
+        let length = bytes.len().min(64 * 1024);
+        let mut line = Vec::with_capacity(length + 1);
+        line.extend_from_slice(&bytes[..length]);
+        line.push(b'\n');
+        let _ = file.write_all(&line);
     }
 }
