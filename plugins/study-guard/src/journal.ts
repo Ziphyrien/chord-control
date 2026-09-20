@@ -96,6 +96,28 @@ export function parseBackup(text: string, legacy = false): Backup {
   };
 }
 
+// Rename the populated directory before deletion. Removing owner.json in place
+// would let POSIX rename publish a successor into the briefly empty lock path.
+async function retireLock(lock: string): Promise<void> {
+  const retired = `${lock}.retired-${randomUUID()}`;
+  // Windows can briefly deny a directory rename while a contender reads owner.json.
+  const deadline = Date.now() + 1000;
+  for (;;) {
+    try {
+      await rename(lock, retired);
+      break;
+    } catch (error) {
+      if (
+        !["EPERM", "EACCES", "EBUSY"].includes((error as NodeJS.ErrnoException).code ?? "") ||
+        Date.now() >= deadline
+      )
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  await rm(retired, { recursive: true, force: true, maxRetries: 3, retryDelay: 25 });
+}
+
 /** Lock publication includes its owner; reapers serialize on the abandoned owner's token. */
 async function directoryLock<T>(
   directory: string,
@@ -141,8 +163,7 @@ async function directoryLock<T>(
               .slice(0, 24);
             const recovery = join(directory, `.wallpaper-recovery-${digest}`);
             await directoryLock(directory, recovery, deadline, depth + 1, async () => {
-              if ((await optionalText(join(lock, "owner.json"))) === text)
-                await rm(lock, { recursive: true, force: true });
+              if ((await optionalText(join(lock, "owner.json"))) === text) await retireLock(lock);
             });
             continue;
           }
@@ -160,8 +181,7 @@ async function directoryLock<T>(
     try {
       return await operation();
     } finally {
-      if ((await optionalText(join(lock, "owner.json"))) === identity)
-        await rm(lock, { recursive: true, force: true });
+      if ((await optionalText(join(lock, "owner.json"))) === identity) await retireLock(lock);
     }
   } finally {
     await rm(candidate, { recursive: true, force: true });

@@ -365,6 +365,31 @@ test("filesystem lock serializes worker generations", async (t) => {
     order.push("second");
   });
   release();
-  await Promise.all([first, second]);
+  const handoff = await Promise.allSettled([first, second]);
+  for (const result of handoff) if (result.status === "rejected") throw result.reason;
   assert.deepEqual(order, ["first", "released", "second"]);
+
+  // Repeated handoffs also exercise the cleanup/acquisition boundary, not only
+  // serialization of operation callbacks. A retired owner must never delete its successor.
+  const lock = join(h.data, "wallpaper-policy.lock");
+  let active = 0;
+  let completed = 0;
+  const results = await Promise.allSettled(
+    Array.from({ length: 4 }, async () => {
+      for (let round = 0; round < 12; round++) {
+        await withJournalLock(h.data, async () => {
+          assert.equal(++active, 1);
+          const owner = await readFile(join(lock, "owner.json"), "utf8");
+          await writeFile(join(h.data, "value"), String(++completed));
+          assert.equal(await readFile(join(lock, "owner.json"), "utf8"), owner);
+          active--;
+        });
+      }
+    }),
+  );
+  for (const result of results) if (result.status === "rejected") throw result.reason;
+  assert.equal(completed, 48);
+  assert.equal(active, 0);
+  await absent(join(lock, "owner.json"));
+  assert.deepEqual(await readdir(h.data), ["value"]);
 });
