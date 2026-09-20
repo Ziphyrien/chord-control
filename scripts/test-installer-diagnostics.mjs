@@ -102,6 +102,8 @@ Function .onInit
 FunctionEnd
 @CALLBACKS@
 Section
+  ; Production succeeds without SetErrorLevel: exercise NSIS's untouched default.
+  StrCmp $TestMode "default-success" end
 @SET_REGISTERS@
   Push "stack-sentinel"
   SetErrorLevel 37
@@ -192,6 +194,15 @@ SectionEnd
     );
   }
   assert.ok(!text.includes("private-command-line-sentinel"), "Command line leaked into log");
+
+  const beforeDefault = text.length;
+  invokeFixture("default-success", 0);
+  const defaultResult = readLog(log).slice(beforeDefault);
+  assert.match(defaultResult, /event=installer_succeeded .*status=exitcode=0\r\n/);
+  assert.ok(
+    !defaultResult.includes("exitcode=-1"),
+    "Unset NSIS error level logged as a failure code",
+  );
 
   invokeFixture("failure", 23);
   text = readLog(log);

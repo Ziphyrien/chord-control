@@ -97,6 +97,10 @@ FunctionEnd
 Function .onInstSuccess
   Push $0
   GetErrorLevel $0
+  ; GetErrorLevel returns -1 when no override was set. Successful NSIS exit is 0.
+  ${If} $0 == -1
+    StrCpy $0 0
+  ${EndIf}
   !insertmacro InstallerLog "installer_succeeded" "exitcode=$0" "$INSTDIR"
   Pop $0
 FunctionEnd

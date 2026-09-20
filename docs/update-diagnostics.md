@@ -42,6 +42,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\collect-update
 | 安装器启动应用成功，没有 `startup_ready`        | 新程序初始化未完成，继续看 `startup_started`、`startup_failed` 与应用错误事件                         |
 | `startup_ready`                                 | 主窗口、托盘和初始化流程已完成；`controller_started` 只表示控制器启动调用成功，不等于全部插件已经激活 |
 
+0.4.7 的 `installer_succeeded` 可能带有 `exitcode=-1`：这是 NSIS 尚未设置退出码的内部默认值，不表示安装失败。0.4.8 起正常成功路径统一记录 `exitcode=0`；实际启动结果仍以 `startup_ready` 和进程状态核对。
+
 `installer_spawned` 仅表示创建进程成功，安装器的“应用已创建”也不是启动完成回执。以新版本 `startup_ready` 和当前实际进程为准。被强制结束的进程可能来不及写最后一条；日志缺失本身不是成功或失败的证明。
 
 ## 采集之后
