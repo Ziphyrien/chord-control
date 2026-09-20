@@ -2,7 +2,7 @@ import { test } from "vite-plus/test";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createServer } from "node:http";
-import { dashboardCsp } from "../services/telemetry/ui/csp.ts";
+import { createDashboardCsp, dashboardCsp } from "../services/telemetry/ui/csp.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -37,7 +37,7 @@ test("static bootstrap remains executable under the Worker's same-origin-only CS
         body: script ? source : html,
         contentType: script ? "text/javascript" : "text/html",
         headers: {
-          "Content-Security-Policy": dashboardCsp,
+          "Content-Security-Policy": createDashboardCsp(),
         },
       });
     });
@@ -68,7 +68,7 @@ test.skipIf(!existsSync(new URL("index.html", dashboardDist)))(
             : path.endsWith(".css")
               ? "text/css"
               : "text/javascript",
-          "Content-Security-Policy": dashboardCsp,
+          "Content-Security-Policy": createDashboardCsp(),
         });
         response.end(body);
       } catch {
@@ -157,21 +157,28 @@ test.skipIf(!existsSync(new URL("index.html", dashboardDist)))(
           window.cspViolations.push(event.effectiveDirective);
         });
       });
+      const policy = createDashboardCsp();
+      const nonce = policy.match(/'nonce-([a-f0-9]+)'/)[1];
+      const previousNonce = createDashboardCsp().match(/'nonce-([a-f0-9]+)'/)[1];
+      assert.notEqual(nonce, previousNonce);
       await blocked.route(`${origin}/blocked`, (route) =>
         route.fulfill({
           contentType: "text/html",
-          headers: { "Content-Security-Policy": dashboardCsp },
-          body: '<div id="blocked" style="position: fixed">blocked</div><style>#blocked { display: none }</style><script>window.inlineRan = true</script>',
+          headers: { "Content-Security-Policy": policy },
+          body: `<div id="blocked" style="position: fixed">blocked</div><style>#blocked { display: none }</style><script>window.inlineRan = true</script><script nonce="${previousNonce}">window.staleRan = true</script><script nonce="${nonce}">window.trustedRan = true</script>`,
         }),
       );
       await blocked.goto(`${origin}/blocked`);
-      await expect.poll(() => blocked.evaluate(() => window.cspViolations.length)).toBe(3);
+      await expect.poll(() => blocked.evaluate(() => window.cspViolations.length)).toBe(4);
       assert.deepEqual((await blocked.evaluate(() => window.cspViolations)).sort(), [
+        "script-src-elem",
         "script-src-elem",
         "style-src-attr",
         "style-src-elem",
       ]);
       assert.equal(await blocked.evaluate(() => window.inlineRan), undefined);
+      assert.equal(await blocked.evaluate(() => window.staleRan), undefined);
+      assert.equal(await blocked.evaluate(() => window.trustedRan), true);
       await expect(blocked.locator("#blocked")).toHaveCSS("position", "static");
       await expect(blocked.locator("#blocked")).toBeVisible();
     } finally {

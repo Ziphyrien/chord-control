@@ -12,7 +12,8 @@ export function createPluginConfig() {
         createStaticConfig({
           output: root ? join(root, "public") : "dist/ui",
           kit: {
-            outDir: root ? join(root, "kit") : ".svelte-kit",
+            // Keep Kit's generated config at the path extended by the UI's tsconfig.
+            outDir: ".svelte-kit",
             embedded: true,
             // Archive identity and page revocation own updates; timestamps must not change bytes.
             version: { name: "plugin", pollInterval: 0 },
@@ -23,6 +24,9 @@ export function createPluginConfig() {
         }),
       ),
     ]),
+    // Compile SDK/shared sources with this UI's config, rather than discovering
+    // the host app's tsconfig and requiring its generated Kit files as well.
+    tsconfig: "./tsconfig.json",
     build: { target: "es2022", assetsInlineLimit: Infinity },
   });
 }
