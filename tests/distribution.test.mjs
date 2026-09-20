@@ -176,6 +176,48 @@ test("repository identity accepts supported GitHub forms and rejects ambiguous o
   );
 });
 
+test("real compiler produces identical archives across workspaces and detects same-version code changes", async (t) => {
+  const root = await temporary(t);
+  const { privateKey, publicKey } = keys();
+  const directories = await Promise.all(
+    ["checkout-a", "checkout-b"].map(async (name) => {
+      const directory = await packageFixture(join(root, name), "repro.plugin", {
+        ui: "ui/index.html",
+      });
+      await mkdir(join(directory, "src"));
+      await mkdir(join(directory, "ui"));
+      await writeFile(join(directory, "src/worker.ts"), "export const value = 1;\n");
+      await writeFile(join(directory, "ui/index.html"), "<p>Plugin UI</p>");
+      return directory;
+    }),
+  );
+  const builds = [];
+  for (const [index, directory] of directories.entries()) {
+    const outdir = join(root, `release-${index}`);
+    const release = await buildPlugin({
+      directory,
+      outdir,
+      privateKey,
+      baseUrl: `https://example.test/release-${index}`,
+    });
+    const bytes = await readFile(join(outdir, `${release.id}-${release.artifactSha256}.zip`));
+    verifySigned(release, publicKey);
+    validatePluginZip(bytes, release);
+    builds.push({ release, bytes });
+  }
+  assert.equal(builds[0].release.artifactSha256, builds[1].release.artifactSha256);
+  assert.deepEqual(builds[0].bytes, builds[1].bytes);
+  await writeFile(join(directories[1], "src/worker.ts"), "export const value = 2;\n");
+  const changed = await buildPlugin({
+    directory: directories[1],
+    outdir: join(root, "changed"),
+    privateKey,
+    baseUrl: "https://example.test/changed",
+  });
+  assert.equal(changed.version, builds[0].release.version);
+  assert.notEqual(changed.artifactSha256, builds[0].release.artifactSha256);
+}, 90_000);
+
 test("catalogues discover only packages, preserve metadata and reproduce signed ZIP bytes", async (t) => {
   const root = await temporary(t),
     pluginsRoot = join(root, "plugins"),

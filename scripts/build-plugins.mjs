@@ -64,7 +64,7 @@ async function compilePlugin({ directory, bundleDir, scratch, pkg }) {
   });
   const entry = join(scratch, "entry.mjs");
   await writeFile(entry, result.outputFiles[0].contents);
-  await bundleFacets({
+  const { manifest, manifestPath } = await bundleFacets({
     plugin: { id: pkg.name, version: pkg.version },
     entries: { worker: entry },
     outdir: bundleDir,
@@ -74,6 +74,16 @@ async function compilePlugin({ directory, bundleDir, scratch, pkg }) {
     sourceMap: false,
     minify: true,
   });
+  // Chord/esbuild's output filename includes the temporary path in its hash.
+  // Use the actual bytes so unchanged code produces identical signed archives.
+  const worker = manifest.entries.worker;
+  const original = safePath(bundleDir, worker.file);
+  const file = `facet-${sha256(await readFile(original))}.cjs`;
+  await rename(original, safePath(bundleDir, file));
+  await writeFile(
+    manifestPath,
+    jsonBytes({ ...manifest, entries: { ...manifest.entries, worker: { ...worker, file } } }),
+  );
   const control = pkg.control ?? {};
   for (const asset of control.assets ?? []) {
     if (asset === "chord-facets.json" || asset === "ui.html")
