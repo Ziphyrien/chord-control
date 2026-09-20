@@ -1,0 +1,19 @@
+{
+  "name": "@chord-control/kit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./static": "./static.ts",
+    "./plugin": "./plugin.ts",
+    "./plugin-hooks": "./plugin-hooks.ts"
+  },
+  "dependencies": {
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0"
+  },
+  "peerDependencies": {
+    "@sveltejs/kit": "^2.70.3",
+    "svelte": "^5.57.0"
+  }
+}

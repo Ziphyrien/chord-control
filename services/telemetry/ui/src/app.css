@@ -1,0 +1,196 @@
+:root {
+  font: 14px/1.6 system-ui;
+  color: var(--cc-text);
+  background: var(--cc-background);
+}
+/* Kit's route announcer remains visually hidden under the Worker's strict CSP. */
+#svelte-announcer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+  width: 1px;
+  height: 1px;
+}
+#telemetry-app {
+  display: contents;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+header,
+main,
+footer {
+  max-width: 1280px;
+  margin: auto;
+  padding: 26px 32px;
+}
+.brand {
+  font: 12px monospace;
+  letter-spacing: 0.15em;
+  color: var(--cc-focus);
+}
+h1 {
+  font-size: 30px;
+  margin: 12px 0;
+}
+h2 {
+  font-size: 22px;
+}
+h3 {
+  margin-top: 30px;
+}
+p,
+footer,
+.muted {
+  color: var(--cc-muted);
+}
+input,
+button {
+  font: inherit;
+  border: 1px solid var(--cc-border-strong);
+  border-radius: 6px;
+  background: var(--cc-control-surface);
+  color: inherit;
+  padding: 10px 14px;
+}
+input {
+  flex: 1;
+  min-width: 140px;
+}
+button {
+  cursor: pointer;
+}
+button:hover {
+  background: var(--cc-control-hover);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.toolbar h2 {
+  flex: 1;
+}
+.device,
+.card {
+  border: 1px solid var(--cc-border);
+  border-radius: 9px;
+  padding: 18px;
+  margin: 12px 0;
+  background: var(--cc-surface);
+}
+.device {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+.device > div {
+  flex: 1;
+}
+.device p {
+  margin: 4px 0;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.card {
+  margin: 0;
+}
+.card strong {
+  display: block;
+  font-size: 20px;
+  font-weight: 550;
+}
+.scroll {
+  overflow: auto;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  white-space: nowrap;
+}
+th,
+td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--cc-border);
+}
+th {
+  color: var(--cc-muted);
+  font-weight: 500;
+}
+td:last-child {
+  white-space: normal;
+  min-width: 140px;
+  max-width: 420px;
+  overflow-wrap: anywhere;
+}
+.diagnostics td {
+  white-space: normal;
+  min-width: 120px;
+  max-width: 420px;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+.diagnostics h4 {
+  margin-bottom: 8px;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 20px;
+  background: var(--cc-input-surface);
+  font: 12px/1.6 monospace;
+}
+#error {
+  color: var(--cc-danger);
+}
+.badge {
+  font: 12px monospace;
+  color: var(--cc-focus);
+}
+.history {
+  display: flex;
+  gap: 16px;
+  white-space: nowrap;
+}
+details {
+  margin: 24px 0;
+}
+summary {
+  cursor: pointer;
+}
+@media (max-width: 600px) {
+  header,
+  main,
+  footer {
+    padding: 20px 16px;
+  }
+  .toolbar,
+  .device {
+    flex-wrap: wrap;
+  }
+  .toolbar input {
+    width: 100%;
+  }
+}
+
+a {
+  color: var(--cc-focus);
+}
+.device a {
+  padding: 10px 14px;
+}

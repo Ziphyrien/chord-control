@@ -1,6 +1,7 @@
 //! Capability transport only. Grants are checked by the controller; this boundary checks
 //! the declared capability and input shape without knowing any plugin's policy.
 mod diagnostics;
+mod failures;
 #[cfg(windows)]
 pub(crate) mod process;
 #[cfg(windows)]
@@ -16,6 +17,7 @@ use tauri::{AppHandle, Manager};
 #[derive(Default)]
 pub(crate) struct NativeState {
     active: Mutex<HashSet<(Generation, String)>>,
+    failures: Mutex<failures::History>,
 }
 struct Ticket {
     app: AppHandle,
@@ -39,7 +41,7 @@ struct Request {
     input: Value,
 }
 impl Request {
-    fn execute(&self) -> Result<Value, String> {
+    fn execute(&self) -> Result<Value, failures::Failure> {
         if self.kind != "native_request"
             || !crate::wire::valid_plugin_id(&self.plugin_id)
             || self.id.is_empty()
@@ -60,8 +62,8 @@ impl Request {
         {
             match permission {
                 "registry-current-user" => registry::execute(&self.operation, &self.input),
-                "wallpaper" => wallpaper::execute(&self.operation, &self.input),
-                _ => process::execute(&self.operation, &self.input),
+                "wallpaper" => wallpaper::execute(&self.operation, &self.input).map_err(Into::into),
+                _ => process::execute(&self.operation, &self.input).map_err(Into::into),
             }
         }
         #[cfg(not(windows))]
@@ -169,7 +171,18 @@ pub(crate) fn handle(app: &AppHandle, value: &Value, generation: Generation) -> 
                     Ok(diagnostics::snapshot(&ticket.app))
                 }
             } else {
-                request.execute()
+                request.execute().map_err(|failure| {
+                    let process = diagnostics::process_identity();
+                    let state = ticket.app.state::<NativeState>();
+                    lock(&state.failures).record(
+                        &request.id,
+                        &request.plugin_id,
+                        &request.operation,
+                        process,
+                        &failure,
+                    );
+                    failure.message
+                })
             };
             reply(&ticket.app, ticket.generation, &ticket.id, result);
             // Individual Win32 APIs may not be interruptible. Never join these on shutdown;

@@ -1,0 +1,35 @@
+[package]
+name = "chord-observer"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+publish = false
+build = "src/build.rs"
+
+# Independent plugin crate; never a member of the desktop host workspace.
+[workspace]
+
+[[bin]]
+name = "chord-observer"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+windows-sys = { version = "=0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+incremental = false
+strip = true
+panic = "abort"
+debug = false

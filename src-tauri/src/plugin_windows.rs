@@ -1,9 +1,9 @@
-//! Plugin windows reuse their webview across page-token changes. Each created window
-//! has a unique identity, so asynchronous destruction cannot collide with its successor.
+//! Plugin windows reuse their webview, unload revoked pages while hidden and only
+//! reveal the current document after it finishes loading. Labels are never reused.
 use crate::{controller::Generation, sync::lock};
 use serde::Deserialize;
 use std::{collections::HashMap, sync::Mutex};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{webview::PageLoadEvent, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[derive(Default)]
 pub(crate) struct WindowState(Mutex<Windows>);
@@ -17,6 +17,8 @@ struct Window {
     label: String,
     generation: Generation,
     url: tauri::Url,
+    visible: bool,
+    ready: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,20 +57,83 @@ fn retire(app: &AppHandle, id: &str) -> Result<(), String> {
     }
     Ok(())
 }
+fn hide(app: &AppHandle, id: &str, generation: Generation) -> Result<(), String> {
+    let label = {
+        let state = app.state::<WindowState>();
+        let mut windows = lock(&state.0);
+        windows
+            .active
+            .get_mut(id)
+            .filter(|entry| entry.generation == generation)
+            .map(|entry| {
+                entry.visible = false;
+                entry.ready = false;
+                entry.label.clone()
+            })
+    };
+    if let Some(window) = label.and_then(|label| app.get_webview_window(&label)) {
+        window.hide().map_err(|e| e.to_string())?;
+        // Hiding a native window alone does not unload its document or stop polling.
+        window
+            .navigate(tauri::Url::parse("about:blank").map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+fn reveal(window: &tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .unminimize()
+        .and_then(|()| window.show())
+        .and_then(|()| window.set_focus())
+        .map_err(|e| e.to_string())
+}
+fn same_document(expected: &tauri::Url, loaded: &tauri::Url) -> bool {
+    let mut expected = expected.clone();
+    let mut loaded = loaded.clone();
+    expected.set_fragment(None);
+    loaded.set_fragment(None);
+    expected == loaded
+}
+fn page_loaded(app: &AppHandle, label: &str, url: &tauri::Url) {
+    if !crate::lifecycle::is_running(app) {
+        return;
+    }
+    let owner = {
+        let state = app.state::<WindowState>();
+        let mut windows = lock(&state.0);
+        windows
+            .active
+            .iter_mut()
+            .find(|(_, entry)| {
+                entry.label == label
+                    && entry.visible
+                    && !entry.ready
+                    && same_document(&entry.url, url)
+            })
+            .map(|(id, entry)| {
+                entry.ready = true;
+                (id.clone(), entry.generation)
+            })
+    };
+    if let Some((id, generation)) = owner {
+        if !crate::controller::is_current(app, generation) {
+            return;
+        }
+        if let Some(window) = app.get_webview_window(label) {
+            if let Err(error) = reveal(&window) {
+                presentation_failed(app, &id, generation, &error);
+            }
+        }
+    }
+}
 fn present(app: &AppHandle, request: &Presentation, generation: Generation) -> Result<(), String> {
+    if !request.visible {
+        return hide(app, &request.plugin_id, generation);
+    }
     let previous = lock(&app.state::<WindowState>().0)
         .active
         .get(&request.plugin_id)
         .cloned();
-    if !request.visible {
-        if let Some(window) = previous
-            .filter(|entry| entry.generation == generation)
-            .and_then(|entry| app.get_webview_window(&entry.label))
-        {
-            window.hide().map_err(|e| e.to_string())?;
-        }
-        return Ok(());
-    }
     let url = loopback(request.url.as_deref().ok_or("Plugin URL missing")?)?;
     let title = request.title.as_deref().unwrap_or("插件");
     if title.len() > 256 {
@@ -78,19 +143,22 @@ fn present(app: &AppHandle, request: &Presentation, generation: Generation) -> R
         .filter(|entry| entry.generation == generation && entry.url.origin() == url.origin())
     {
         if let Some(window) = app.get_webview_window(&entry.label) {
-            // Revoked page tokens require navigation, not destruction of the native window.
-            if window.url().map_err(|e| e.to_string())? != url {
-                window.navigate(url.clone()).map_err(|e| e.to_string())?;
+            window.set_title(title).map_err(|e| e.to_string())?;
+            if entry.visible && entry.ready && entry.url == url {
+                return reveal(&window);
             }
-            window
-                .set_title(title)
-                .and_then(|()| window.unminimize())
-                .and_then(|()| window.show())
-                .and_then(|()| window.set_focus())
-                .map_err(|e| e.to_string())?;
-            lock(&app.state::<WindowState>().0)
-                .active
-                .insert(request.plugin_id.clone(), Window { url, ..entry });
+            // Never expose the previous document while navigate is still asynchronous.
+            window.hide().map_err(|e| e.to_string())?;
+            lock(&app.state::<WindowState>().0).active.insert(
+                request.plugin_id.clone(),
+                Window {
+                    url: url.clone(),
+                    visible: true,
+                    ready: false,
+                    ..entry
+                },
+            );
+            window.navigate(url).map_err(|e| e.to_string())?;
             return Ok(());
         }
     }
@@ -98,27 +166,42 @@ fn present(app: &AppHandle, request: &Presentation, generation: Generation) -> R
     if lock(&app.state::<WindowState>().0).active.len() >= 32 {
         return Err("插件窗口数量超出限制".into());
     }
-    // Never reuse labels, including while an old webview is still being destroyed.
     let label = format!("plugin-{:x}", next_id(app)?);
     let origin = url.origin();
-    WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url.clone()))
+    // Register intent before build: a fast page load may complete during creation.
+    lock(&app.state::<WindowState>().0).active.insert(
+        request.plugin_id.clone(),
+        Window {
+            label: label.clone(),
+            generation,
+            url: url.clone(),
+            visible: true,
+            ready: false,
+        },
+    );
+    WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .title(title)
         .theme(Some(tauri::Theme::Dark))
         .inner_size(440.0, 560.0)
         .resizable(false)
         .center()
-        .focused(true)
-        .on_navigation(move |target| target.origin() == origin)
+        .visible(false)
+        .focused(false)
+        .on_navigation(move |target| target.as_str() == "about:blank" || target.origin() == origin)
+        .on_page_load(|window, payload| {
+            if payload.event() != PageLoadEvent::Finished {
+                return;
+            }
+            let handle = window.app_handle().clone();
+            let app = handle.clone();
+            let label = window.label().to_owned();
+            let url = payload.url().clone();
+            if let Err(error) = handle.run_on_main_thread(move || page_loaded(&app, &label, &url)) {
+                eprintln!("Plugin page readiness discarded: {error}");
+            }
+        })
         .build()
         .map_err(|e| e.to_string())?;
-    lock(&app.state::<WindowState>().0).active.insert(
-        request.plugin_id.clone(),
-        Window {
-            label,
-            generation,
-            url,
-        },
-    );
     Ok(())
 }
 fn notify_closed(app: &AppHandle, plugin_id: &str, generation: Generation) {
@@ -128,14 +211,19 @@ fn notify_closed(app: &AppHandle, plugin_id: &str, generation: Generation) {
             generation,
             serde_json::json!({
                 "id": format!("window-closed-{sequence}"),
-                "type": "plugin_window_closed",
-                "pluginId": plugin_id,
+                "type": "plugin_window_closed", "pluginId": plugin_id,
             }),
         )
     });
     if let Err(error) = result {
         eprintln!("Plugin window cancellation discarded: {error}");
     }
+}
+fn presentation_failed(app: &AppHandle, id: &str, generation: Generation, error: &str) {
+    eprintln!("Plugin window presentation failed: {error}");
+    let _ = retire(app, id);
+    notify_closed(app, id, generation);
+    crate::desktop::report(app, "插件窗口无法打开，请重试");
 }
 pub(crate) fn handle(app: &AppHandle, value: &serde_json::Value, generation: Generation) {
     let request = match serde_json::from_value::<Presentation>(value.clone()) {
@@ -154,12 +242,7 @@ pub(crate) fn handle(app: &AppHandle, value: &serde_json::Value, generation: Gen
             return;
         }
         if let Err(error) = present(&handle, &request, generation) {
-            eprintln!("Plugin window presentation failed: {error}");
-            let _ = retire(&handle, &request.plugin_id);
-            // A presentation event has no RPC reply. End the plugin's pending interaction
-            // through its normal close notification instead of leaving it to time out.
-            notify_closed(&handle, &request.plugin_id, generation);
-            crate::desktop::report(&handle, "插件窗口无法打开，请重试");
+            presentation_failed(&handle, &request.plugin_id, generation, &error);
         }
     }) {
         eprintln!("Plugin window dispatch failed: {error}");
@@ -174,8 +257,12 @@ pub(crate) fn user_closed(app: &AppHandle, label: &str) {
         .find(|(_, entry)| entry.label == label)
         .map(|(id, entry)| (id.clone(), entry.generation));
     if let Some((id, generation)) = owner {
-        // A delayed close from a retired window cannot cancel a successor's interaction.
         if crate::controller::is_current(app, generation) {
+            // Clear visibility immediately so a late load cannot reopen a closed window.
+            if let Err(error) = hide(app, &id, generation) {
+                eprintln!("Plugin page cleanup failed: {error}");
+                let _ = retire(app, &id);
+            }
             notify_closed(app, &id, generation);
         }
     }

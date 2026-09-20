@@ -187,6 +187,7 @@ export async function createTransportHarness(options = {}) {
               }
             : {}),
           ...(extra.services ? { services: extra.services } : {}),
+          ...(extra.chordVersion ? { chordVersion: extra.chordVersion } : {}),
           ...(extra.hooks ? { hooks: ["desktop.open"] } : {}),
         },
         keys.privateKey,
@@ -241,6 +242,9 @@ export async function createTransportHarness(options = {}) {
         pending.clear();
       });
       await started;
+      // Empty installations immediately poll; do not race fixture publication against that poll.
+      if (!snapshot.plugins.length && snapshot.checkedAt === null)
+        await h.waitFor((event) => event.type === "snapshot" && event.snapshot.checkedAt !== null);
     },
     command(command) {
       return new Promise((resolve, reject) => {

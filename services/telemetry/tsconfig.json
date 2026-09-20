@@ -10,5 +10,6 @@
     "lib": ["ES2022"],
     "types": ["./worker-configuration.d.ts", "node"]
   },
-  "include": ["src/**/*.ts", "worker-configuration.d.ts"]
+  "include": ["src/**/*.ts", "worker-configuration.d.ts"],
+  "exclude": ["ui"]
 }

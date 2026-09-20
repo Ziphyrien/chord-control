@@ -1,7 +1,7 @@
 import { test } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
-import { PadSession } from "../plugins/password-pad/ui/session.ts";
+import { PadSession } from "../plugins/password-pad/ui/src/session.ts";
 function deferred() {
   let resolve, reject;
   const promise = new Promise((yes, no) => {
@@ -124,6 +124,34 @@ test("pagehide suppresses late replies and pageshow resumes polling", async (t) 
   await h.session.refresh();
   await h.session.select(5);
   assert.equal(h.requests.length, count);
+});
+
+test("initial loading is busy and a successful read clears a prior read failure", async (t) => {
+  const h = fixture(t);
+  assert.equal(h.state.busy, true);
+  assert.equal(h.state.message, "");
+  h.requests[0].reject(new Error("temporary read failure"));
+  await tick();
+  assert.match(h.state.message, /temporary read failure/);
+  const retry = h.session.refresh();
+  h.requests[1].resolve(board());
+  await retry;
+  assert.equal(h.state.busy, false);
+  assert.equal(h.state.message, "");
+  assert.equal(h.state.view.id, "one");
+});
+
+test("exhausted verification keeps the completion hint after the empty refresh", async (t) => {
+  const h = fixture(t);
+  h.requests[0].resolve(board());
+  await tick();
+  const submit = h.session.select(5);
+  h.requests[1].resolve({ approved: false, retryable: false });
+  await tick();
+  h.requests[2].resolve(null);
+  await submit;
+  assert.equal(h.state.view, null);
+  assert.match(h.state.message, /已结束/);
 });
 
 test("input limit, backspace and malformed challenge fail safely", async (t) => {

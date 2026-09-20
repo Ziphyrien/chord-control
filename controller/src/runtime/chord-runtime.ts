@@ -48,6 +48,7 @@ interface Options {
   native: NativeBridge;
   log(id: string, detail: string): void;
   present(id: string, visible: boolean): Promise<void>;
+  revokePages(id: string): void;
   snapshot?(): Json;
   metrics?: OperationMetrics;
 }
@@ -181,6 +182,7 @@ export class ChordRuntime implements PluginRuntime {
       access.phase = "stopping";
       kernel.stop();
       lifetime.abort();
+      this.options.revokePages(manifest.id);
       this.running.delete(manifest.id);
       this.services.remove(manifest.id);
       const failures: unknown[] = [];
@@ -216,6 +218,7 @@ export class ChordRuntime implements PluginRuntime {
     current.access.phase = "stopping";
     current.kernel.stop();
     current.lifetime.abort(new Error("插件正在停止"));
+    this.options.revokePages(id);
     this.running.delete(id);
     this.services.remove(id);
     const failures: unknown[] = [];

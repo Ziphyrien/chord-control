@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev:worker": "wrangler dev",
+    "build": "bun run --cwd ui build",
+    "deploy": "bun run build && wrangler deploy",
     "types": "wrangler types"
   },
   "devDependencies": {

@@ -26,7 +26,17 @@ export class PluginLifecycle {
   constructor(dependencies: Dependencies) {
     this.dependencies = dependencies;
   }
-  private async stop(config: Configuration, ids: Set<string>): Promise<void> {
+  private recordFailure(id: string, error: unknown, attemptErrors?: Map<string, string>): Error {
+    const detail = message(error);
+    this.errors.set(id, detail);
+    attemptErrors?.set(id, detail);
+    return new Error(`${id}: ${detail}`, { cause: error });
+  }
+  private async stop(
+    config: Configuration,
+    ids: Set<string>,
+    attemptErrors?: Map<string, string>,
+  ): Promise<void> {
     const { runtime } = this.dependencies,
       failures: unknown[] = [];
     for (const id of installedGraph(config).order.reverse())
@@ -34,7 +44,7 @@ export class PluginLifecycle {
         try {
           await runtime.deactivate(id);
         } catch (error) {
-          failures.push(error);
+          failures.push(this.recordFailure(id, error, attemptErrors));
         }
       }
     if (failures.length)
@@ -43,6 +53,7 @@ export class PluginLifecycle {
   private async start(
     config: Configuration,
     required: ReadonlySet<string> = new Set(),
+    attemptErrors?: Map<string, string>,
   ): Promise<void> {
     const { runtime, archives, allowUnsigned, log } = this.dependencies,
       graph = installedGraph(config, true);
@@ -62,9 +73,9 @@ export class PluginLifecycle {
         await runtime.activate(plugin.installed!, await archives.read(plugin.installed!));
         this.errors.delete(id);
       } catch (error) {
-        this.errors.set(id, message(error));
-        log("插件启动失败", `${id}: ${message(error)}`, "error");
-        if (required.has(id)) throw error;
+        const failure = this.recordFailure(id, error, attemptErrors);
+        log("插件启动失败", failure.message, "error");
+        if (required.has(id)) throw failure;
       }
     }
   }
@@ -100,9 +111,10 @@ export class PluginLifecycle {
         if (desired.get(id)?.enabled && desired.get(id)?.installed) mustStart.add(id);
       for (const id of mustStart)
         if (plan.blocked.has(id)) throw new Error(`${id}: ${plan.blocked.get(id)}`);
+      const attemptErrors = new Map<string, string>();
       try {
-        await this.stop(before, stop);
-        await this.start(next, mustStart);
+        await this.stop(before, stop, attemptErrors);
+        await this.start(next, mustStart, attemptErrors);
         await repository.commit(next);
       } catch (error) {
         // A candidate may have acquired resources even when later persistence fails.
@@ -122,7 +134,7 @@ export class PluginLifecycle {
             .map((item) => item.id),
         );
         try {
-          await this.stop(next, rollback);
+          await this.stop(next, rollback, attemptErrors);
           await this.start(
             before,
             new Set(
@@ -130,6 +142,7 @@ export class PluginLifecycle {
                 .filter((item) => item.enabled && item.installed && stop.has(item.id))
                 .map((item) => item.id),
             ),
+            attemptErrors,
           );
         } catch (recovery) {
           log("恢复插件失败", message(recovery), "error");
@@ -137,6 +150,9 @@ export class PluginLifecycle {
             [error, recovery],
             `${message(error)}；恢复失败: ${message(recovery)}`,
           );
+        } finally {
+          // Restoring an old revision must not erase the failed candidate's own error.
+          for (const [id, detail] of attemptErrors) this.errors.set(id, detail);
         }
         throw error;
       }

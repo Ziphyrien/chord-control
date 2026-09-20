@@ -1,0 +1,13 @@
+{
+  "name": "@chord-control/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./password": "./password.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/chord": "0.86.1"
+  }
+}

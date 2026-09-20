@@ -7,7 +7,7 @@ import { setImmediate } from "node:timers/promises";
 import { createFacetHost, defineFacet } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { ControlHost, PluginUi, Lifecycle } from "../sdk/index.ts";
-import { PasswordPrompt } from "../plugins/password-pad/contract.ts";
+import { PasswordPrompt } from "../packages/contracts/password.ts";
 import { passwordFor } from "../plugins/password-pad/src/board.ts";
 import passwordFacet from "../plugins/password-pad/src/worker.ts";
 import appFacet from "../plugins/app-guard/src/worker.ts";
@@ -64,10 +64,12 @@ test("real Chord password service registers stable IDs, approves once, and rejec
   sequence.push(view.cells.indexOf("＃"));
   assert.deepEqual(await call(host, "submit", { id: view.id, revision: view.revision, sequence }), {
     approved: true,
+    retryable: false,
   });
   assert.equal(await approved, true);
   assert.deepEqual(await call(host, "submit", { id: view.id, revision: view.revision, sequence }), {
     approved: false,
+    retryable: false,
   });
   for (const method of ["practice", "cancel"]) await assert.rejects(call(host, method), /无效/);
   await setImmediate();
@@ -108,7 +110,7 @@ test("app Lifecycle delegates decisions through the real password service", asyn
   const hook = host.services.use(Lifecycle);
   assert.equal(await hook.before("install", { pluginId: "other" }, BACKGROUND_CONTEXT), true);
   const result = hook.before("desktop.quit", null, BACKGROUND_CONTEXT);
-  assert.equal((await call(host, "challenge")).title, "退出控制器");
+  assert.equal((await call(host, "challenge")).title, "退出 Chord Control");
   await call(host, "window_closed");
   assert.equal(await result, false);
 });

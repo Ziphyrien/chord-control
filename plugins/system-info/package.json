@@ -1,11 +1,11 @@
 {
   "name": "com.example.system-info",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "查看本机系统状态并保存本地便笺",
   "type": "module",
   "dependencies": {
-    "@earendil-works/chord": "0.85.1"
+    "@earendil-works/chord": "0.86.1"
   },
   "control": {
     "name": "系统信息与便笺",
@@ -18,7 +18,6 @@
       "provides": [],
       "requires": []
     },
-    "ui": "ui/index.html",
-    "uiScript": "ui/main.ts"
+    "uiProject": "ui/vite.config.ts"
   }
 }

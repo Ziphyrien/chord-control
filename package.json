@@ -1,17 +1,20 @@
 {
   "name": "chord-control",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "private": true,
   "description": "Windows control center for Chord plugins",
   "workspaces": [
     "plugins/*",
-    "services/*"
+    "plugins/*/ui",
+    "services/*",
+    "services/*/ui",
+    "packages/*"
   ],
   "type": "module",
   "scripts": {
     "dev": "vp dev",
     "build": "vp build",
-    "check": "vp check && vp run check:svelte",
+    "check": "vp run sync:svelte && vp check && vp run check:svelte",
     "typecheck": "vp check --no-fmt --no-lint && vp run check:svelte",
     "lint": "vp lint",
     "lint:fix": "vp lint --fix",
@@ -36,22 +39,29 @@
     "test:ui": "playwright test",
     "test:periodic": "vp test tests/periodic.test.mjs",
     "test:architecture": "vp test tests/architecture.test.mjs",
-    "check:svelte": "svelte-check --tsconfig ./tsconfig.json --tsgo"
+    "sync:svelte": "svelte-kit sync && vp run --filter \"@chord-control/*-ui\" sync:svelte && vp run --filter @chord-control/telemetry-dashboard sync:svelte",
+    "check:svelte": "svelte-kit sync && svelte-check --config ./vite.config.ts --tsconfig ./tsconfig.json --tsgo && vp run --filter \"@chord-control/*-ui\" check:svelte && vp run --filter @chord-control/telemetry-dashboard check:svelte",
+    "theme:generate": "node scripts/generate-palette.mjs",
+    "theme:check": "node scripts/generate-palette.mjs --check"
   },
   "dependencies": {
-    "@earendil-works/chord": "0.85.1",
+    "@chord-control/ui": "workspace:*",
+    "@earendil-works/chord": "0.86.1",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-autostart": "^2.5.1",
-    "bits-ui": "^2.19.2",
     "fflate": "^0.8.3",
     "svelte": "^5.57.0"
   },
   "devDependencies": {
+    "@chord-control/kit": "workspace:*",
     "@playwright/test": "^1.63.0",
+    "@sveltejs/kit": "^2.70.3",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^26.5.1",
     "@typescript/native": "npm:typescript@7",
+    "apca-w3": "^0.1.9",
+    "culori": "^4.0.2",
     "esbuild": "^0.28.2",
     "knip": "6.35.1",
     "svelte-check": "^4.7.6",

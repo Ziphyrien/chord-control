@@ -11,8 +11,3 @@ export type ChallengeView = {
   size: number;
   expiresAt: number;
 };
-export type ChallengeSubmission = {
-  id: string;
-  revision: number;
-  sequence: number[];
-};

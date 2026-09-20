@@ -1,6 +1,7 @@
 //! Lossless HKCU values. Paths, desired policy and restoration journals belong to plugins.
+use super::failures::Failure;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::io;
 use winreg::{enums::*, RegKey, RegValue};
 const MAX_BYTES: usize = 32768;
@@ -57,23 +58,49 @@ fn kind(value: u32) -> Result<RegType, String> {
     .find(|kind| kind.clone() as u32 == value)
     .ok_or("不支持的注册表类型".into())
 }
-fn read(request: Read) -> Result<Value, String> {
+fn failure(api: &'static str, error: io::Error, path: &str, name: &str, rights: u32) -> Failure {
+    Failure::io(
+        api,
+        error,
+        json!({"kind":"registry","hive":"HKCU","path":path,"name":name}),
+        Some(rights),
+    )
+}
+fn read(request: Read) -> Result<Value, Failure> {
     validate(&request.path, &request.name)?;
-    let result = RegKey::predef(HKEY_CURRENT_USER)
-        .open_subkey_with_flags(request.path, KEY_QUERY_VALUE)
-        .and_then(|key| key.get_raw_value(request.name));
-    match result {
+    let key = match RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(&request.path, KEY_QUERY_VALUE)
+    {
+        Ok(key) => key,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Value::Null),
+        Err(error) => {
+            return Err(failure(
+                "RegOpenKeyExW",
+                error,
+                &request.path,
+                &request.name,
+                KEY_QUERY_VALUE,
+            ))
+        }
+    };
+    match key.get_raw_value(&request.name) {
         Ok(value) if value.bytes.len() <= MAX_BYTES => serde_json::to_value(RawValue {
             r#type: value.vtype as u32,
             bytes: value.bytes,
         })
-        .map_err(|e| e.to_string()),
+        .map_err(|e| e.to_string().into()),
         Ok(_) => Err("注册表值过大".into()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Value::Null),
-        Err(error) => Err(error.to_string()),
+        Err(error) => Err(failure(
+            "RegQueryValueExW",
+            error,
+            &request.path,
+            &request.name,
+            KEY_QUERY_VALUE,
+        )),
     }
 }
-fn write(request: Write) -> Result<Value, String> {
+fn write(request: Write) -> Result<Value, Failure> {
     validate(&request.path, &request.name)?;
     let value: Option<RawValue> =
         serde_json::from_value(request.value).map_err(|e| e.to_string())?;
@@ -86,24 +113,59 @@ fn write(request: Write) -> Result<Value, String> {
             bytes: value.bytes,
         };
         let (key, _) = RegKey::predef(HKEY_CURRENT_USER)
-            .create_subkey_with_flags(request.path, KEY_SET_VALUE)
-            .map_err(|e| e.to_string())?;
-        key.set_raw_value(request.name, &raw)
-            .map_err(|e| e.to_string())?;
+            .create_subkey_with_flags(&request.path, KEY_SET_VALUE)
+            .map_err(|e| {
+                failure(
+                    "RegCreateKeyExW",
+                    e,
+                    &request.path,
+                    &request.name,
+                    KEY_SET_VALUE,
+                )
+            })?;
+        key.set_raw_value(&request.name, &raw).map_err(|e| {
+            failure(
+                "RegSetValueExW",
+                e,
+                &request.path,
+                &request.name,
+                KEY_SET_VALUE,
+            )
+        })?;
     } else {
         // Deleting an absent value/key must not create a key as a side effect.
-        match RegKey::predef(HKEY_CURRENT_USER)
-            .open_subkey_with_flags(request.path, KEY_SET_VALUE)
-            .and_then(|key| key.delete_value(request.name))
+        let key = match RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey_with_flags(&request.path, KEY_SET_VALUE)
         {
+            Ok(key) => key,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Value::Null),
+            Err(error) => {
+                return Err(failure(
+                    "RegOpenKeyExW",
+                    error,
+                    &request.path,
+                    &request.name,
+                    KEY_SET_VALUE,
+                ))
+            }
+        };
+        match key.delete_value(&request.name) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.to_string()),
+            Err(error) => {
+                return Err(failure(
+                    "RegDeleteValueW",
+                    error,
+                    &request.path,
+                    &request.name,
+                    KEY_SET_VALUE,
+                ))
+            }
         }
     }
     Ok(Value::Null)
 }
-pub(super) fn execute(operation: &str, input: &Value) -> Result<Value, String> {
+pub(super) fn execute(operation: &str, input: &Value) -> Result<Value, Failure> {
     match operation {
         "registry.read" => read(serde_json::from_value(input.clone()).map_err(|e| e.to_string())?),
         "registry.write" => {

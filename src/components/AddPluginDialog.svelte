@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Modal from "./Modal.svelte";
+  import Modal from "@chord-control/ui/Modal.svelte";
   let {
     busy,
     available,
@@ -51,3 +51,9 @@
     </div>
   </form>
 </Modal>
+
+<style>
+  form {
+    margin-top: 24px;
+  }
+</style>

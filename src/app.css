@@ -1,15 +1,18 @@
+@import "@chord-control/ui/palette.css";
+
 :root {
   font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
-  color: #e8e8ea;
-  background: #151617;
+  color: var(--cc-text);
+  background: var(--cc-background);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  color-scheme: dark;
-  --surface: #202122;
-  --line: #393c3f;
-  --muted: #a7adb0;
-  --accent: #b2d3a2;
-  --danger: #f2aaa1;
+  --surface: var(--cc-surface);
+  --line: var(--cc-border);
+  --muted: var(--cc-muted);
+  --accent: var(--cc-fill);
+  --danger: var(--cc-danger);
+  --cc-radius: 8px;
+  --cc-font: 15px/1.6 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
 }
 * {
   box-sizing: border-box;
@@ -32,13 +35,13 @@ textarea {
 button {
   min-height: 38px;
   padding: 8px 14px;
-  background: #25282b;
+  background: var(--cc-control-surface);
   color: inherit;
   cursor: pointer;
 }
 button:hover:not(:disabled) {
-  background: #303b33;
-  border-color: #637666;
+  background: var(--cc-control-hover);
+  border-color: var(--cc-border-strong);
 }
 button:disabled {
   opacity: 0.45;
@@ -47,11 +50,11 @@ button:disabled {
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #182219;
+  color: var(--cc-on-fill);
   font-weight: 600;
 }
 button.primary:hover:not(:disabled) {
-  background: #c5e4b6;
+  background: var(--cc-fill-hover);
 }
 button.text-button {
   background: transparent;
@@ -67,49 +70,9 @@ button.danger {
 input,
 textarea {
   padding: 10px 12px;
-  background: #17191b;
+  background: var(--cc-input-surface);
   color: inherit;
   min-width: 0;
-}
-.switch {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  width: 42px;
-  height: 24px;
-  min-height: 24px;
-  padding: 3px;
-  border-radius: 999px;
-  background: #444b46;
-}
-.switch[data-state="checked"] {
-  background: var(--accent);
-}
-.switch-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  transform: translateX(0);
-}
-.switch-thumb[data-state="checked"] {
-  transform: translateX(18px);
-}
-
-.checkbox-control {
-  display: inline-grid;
-  place-items: center;
-  width: 19px;
-  height: 19px;
-  min-height: 19px;
-  padding: 0;
-  flex-shrink: 0;
-  border-radius: 3px;
-}
-.checkbox-control[data-state="checked"] {
-  color: #152010;
-  background: var(--accent);
-  border-color: var(--accent);
 }
 textarea {
   resize: vertical;
@@ -156,7 +119,7 @@ p {
   left: 16px;
   z-index: 20;
   background: var(--accent);
-  color: #182219;
+  color: var(--cc-on-fill);
   padding: 12px;
 }
 .skip-link:focus {
@@ -176,7 +139,7 @@ p {
   gap: 42px;
   padding: 32px 18px 24px;
   border-right: 1px solid var(--line);
-  background: #191b1d;
+  background: var(--cc-sidebar);
 }
 .brand {
   display: flex;
@@ -201,8 +164,8 @@ nav {
   padding: 12px 16px;
 }
 .nav-item.selected {
-  background: #29362b;
-  color: #d6e9cc;
+  background: var(--cc-accent);
+  color: var(--cc-accent-text);
 }
 .sidebar-footer {
   margin-top: auto;
@@ -338,24 +301,24 @@ main {
   font-size: 11px;
   line-height: 1.4;
   padding: 4px 7px;
-  color: #bcc8bf;
-  background: #2c362f;
+  color: var(--cc-accent-text);
+  background: var(--cc-accent);
   white-space: nowrap;
 }
 .status.active,
 .status.success {
-  color: #c0dfa9;
-  background: #293b2a;
+  color: var(--cc-success);
+  background: var(--cc-success-surface);
 }
 .status.error,
 .status.blocked {
   color: var(--danger);
-  background: #402b27;
+  background: var(--cc-danger-surface);
 }
 .status.warning,
 .status.update {
-  color: #e2cc94;
-  background: #3a3423;
+  color: var(--cc-warning);
+  background: var(--cc-warning-surface);
 }
 .plugin-actions {
   justify-content: flex-end;
@@ -368,7 +331,7 @@ main {
   color: var(--muted);
 }
 .empty h2 {
-  color: #d1d9d3;
+  color: var(--cc-text);
 }
 .empty p {
   margin-top: 10px;
@@ -380,40 +343,6 @@ main {
 .footnote {
   margin-top: 22px;
   font-size: 12px;
-}
-.activity-filter {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-width: 148px;
-  white-space: nowrap;
-}
-.activity-filter-menu {
-  z-index: 20;
-  min-width: 180px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 0 8px 24px #0005;
-}
-.activity-filter-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 9px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  outline: none;
-}
-.activity-filter-option[data-highlighted] {
-  background: #29362b;
-}
-.activity-filter-check {
-  width: 16px;
-  color: var(--accent);
 }
 .activity-list {
   list-style: none;
@@ -482,59 +411,11 @@ main {
 .field input[type="number"] {
   width: 150px;
 }
-.checkbox {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  margin-bottom: 24px;
-}
 .path {
   overflow-wrap: anywhere;
 }
 .settings-section .error {
   margin-bottom: 14px;
-}
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  background: #060c09b8;
-}
-.modal {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  z-index: 31;
-  transform: translate(-50%, -50%);
-  width: min(520px, calc(100% - 32px));
-  max-height: calc(100dvh - 48px);
-  overflow: auto;
-  padding: 28px;
-  border: 1px solid #4c5c50;
-  border-radius: 8px;
-  color: #e8e8ea;
-  background: var(--surface);
-  box-shadow: 0 24px 90px #0006;
-}
-.modal [data-dialog-title] {
-  font-size: 21px;
-  overflow-wrap: anywhere;
-}
-.modal-description {
-  margin-top: 14px;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.65;
-}
-.modal form {
-  margin-top: 24px;
-}
-.dialog-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
 }
 .dialog-actions {
   justify-content: flex-end;
@@ -544,7 +425,7 @@ main {
   max-height: 240px;
   overflow: auto;
   padding: 14px 14px 14px 34px;
-  background: #101713;
+  background: var(--cc-input-surface);
   border-radius: 7px;
   line-height: 1.9;
   overflow-wrap: anywhere;
@@ -556,7 +437,7 @@ main {
   min-height: 360px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--cc-surface);
 }
 .toast {
   position: fixed;
@@ -565,8 +446,8 @@ main {
   transform: translateX(-50%);
   max-width: calc(100% - 32px);
   padding: 13px 20px;
-  background: #2a382c;
-  border: 1px solid #536b50;
+  background: var(--cc-accent);
+  border: 1px solid var(--cc-border-strong);
   border-radius: 8px;
   box-shadow: 0 8px 30px #0005;
   font-size: 14px;
@@ -636,9 +517,6 @@ main {
   }
   .activity-row time {
     margin-left: 0;
-  }
-  .modal {
-    padding: 22px;
   }
   .plugin-frame {
     height: 65dvh;

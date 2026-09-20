@@ -1,9 +1,12 @@
 {
   "name": "com.chord.password-pad",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "每日密码单击输入，连续密码支持首尾虚位并以 ＃ 确认",
   "type": "module",
+  "dependencies": {
+    "@chord-control/contracts": "workspace:*"
+  },
   "control": {
     "name": "密保盘",
     "minHostVersion": "0.2.0",
@@ -13,7 +16,6 @@
       ],
       "requires": []
     },
-    "ui": "ui/index.html",
-    "uiScript": "ui/main.ts"
+    "uiProject": "ui/vite.config.ts"
   }
 }

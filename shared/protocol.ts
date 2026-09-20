@@ -1,6 +1,8 @@
 import { defaultCatalogPublicKey, defaultCatalogUrl } from "./distribution.ts";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+/** Where a plugin page is being presented. Business behavior remains inside the plugin. */
+export type PluginSurface = "panel" | "window";
 export type PluginStatus =
   | "active"
   | "update"

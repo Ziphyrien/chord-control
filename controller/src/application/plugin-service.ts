@@ -233,8 +233,7 @@ export class PluginService {
             for (const id of group) this.lifecycle.errors.delete(id);
           } catch (error) {
             failures++;
-            for (const id of group) this.lifecycle.errors.set(id, message(error));
-            log("插件更新已回退", message(error), "error");
+            log("插件更新失败", `受影响: ${group.join(", ")}；${message(error)}`, "error");
           }
           if (this.stopping) break;
         }
@@ -256,22 +255,22 @@ export class PluginService {
         plugin = this.registration(next, id);
       try {
         plugin.installed = await this.prepare(plugin);
-        plugin.updatedAt = new Date().toISOString();
-        if (isIgnored(next, plugin)) {
-          plugin.enabled = true;
-          setIgnored(next, plugin, false);
-        }
-        await this.lifecycle.commit(next, plugin.enabled ? [id] : [], validate);
-        this.lifecycle.errors.delete(id);
-        this.dependencies.log(
-          "插件已安装",
-          `${plugin.installed.name} ${plugin.installed.version}`,
-          "success",
-        );
       } catch (error) {
         this.lifecycle.errors.set(id, message(error));
         throw error;
       }
+      plugin.updatedAt = new Date().toISOString();
+      if (isIgnored(next, plugin)) {
+        plugin.enabled = true;
+        setIgnored(next, plugin, false);
+      }
+      await this.lifecycle.commit(next, plugin.enabled ? [id] : [], validate);
+      this.lifecycle.errors.delete(id);
+      this.dependencies.log(
+        "插件已安装",
+        `${plugin.installed.name} ${plugin.installed.version}`,
+        "success",
+      );
     });
   }
   add(url: string, key: string, validate: () => void = () => {}): Promise<void> {

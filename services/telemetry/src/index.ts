@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { dashboardCsp } from "../ui/csp.ts";
 import { isTelemetryReport, telemetryMaxBytes } from "../../../shared/telemetry.ts";
 import { object } from "../../../shared/validation.ts";
 export { DeviceConnection } from "./connections.ts";
@@ -218,10 +219,7 @@ export default {
     secured.headers.set("Cache-Control", "no-store");
     secured.headers.set("X-Content-Type-Options", "nosniff");
     secured.headers.set("Referrer-Policy", "no-referrer");
-    secured.headers.set(
-      "Content-Security-Policy",
-      "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
-    );
+    secured.headers.set("Content-Security-Policy", dashboardCsp);
     return secured;
   },
   async scheduled(_event, env) {

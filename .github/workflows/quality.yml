@@ -21,9 +21,15 @@ jobs:
           cache: true
           run-install: false
       - run: vp install --frozen-lockfile --ignore-scripts
+      - run: vp run sync:svelte
+      - run: vp run theme:check
       - run: vp check
       - run: vp run check:svelte
       - run: vp run knip
+      - name: Install browser for telemetry dashboard verification
+        run: vp exec playwright install --with-deps chromium
+      - name: Build telemetry dashboard for production browser checks
+        run: vp run --filter @chord-control/telemetry-dashboard build
       - run: vp test
       - uses: dtolnay/rust-toolchain@stable
         if: inputs.rust

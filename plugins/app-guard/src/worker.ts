@@ -1,6 +1,6 @@
 import { defineFacet } from "@earendil-works/chord";
 import { Lifecycle } from "../../../sdk/index.ts";
-import { PasswordPrompt } from "../../password-pad/contract.ts";
+import { PasswordPrompt } from "@chord-control/contracts/password";
 import { authorizationTitle } from "./policy.ts";
 
 export default defineFacet({

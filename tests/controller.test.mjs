@@ -135,6 +135,150 @@ test("failed candidate restores stopped provider and consumers in dependency ord
   );
   await h.service.close();
 });
+for (const recoveryFails of [false, true]) {
+  test(`failure attribution stays with the failed consumer when recovery ${recoveryFails ? "fails" : "succeeds"}`, async (t) => {
+    const companion = manifest("com.companion", { services: { provides: [], requires: ["auth"] } });
+    const releases = [provider(), companion, consumer(), manifest("com.independent")];
+    const h = await applicationFixture(releases.map((item) => registration(item)));
+    t.onTestFinished(() => h.service.close());
+    h.catalog = {
+      format: 1,
+      plugins: releases.map((item) => ({
+        ...item,
+        version: "2.0.0",
+        artifactSha256: "b".repeat(64),
+      })),
+    };
+    h.failActivate = ["com.consumer@2.0.0", ...(recoveryFails ? ["com.consumer@1.0.0"] : [])];
+    assert.equal((await h.service.checkUpdates()).failures, 1);
+    const list = h.service.summaries();
+    assert.deepEqual(
+      list.filter((item) => item.error).map((item) => item.id),
+      ["com.consumer"],
+    );
+    const failed = list.find((item) => item.id === "com.consumer");
+    assert.equal(failed.running, !recoveryFails);
+    assert.equal(failed.status, "error");
+    assert.match(failed.error, /activation failed/);
+    for (const id of ["com.provider", "com.companion"]) {
+      const healthy = list.find((item) => item.id === id);
+      assert.equal(healthy.running, true);
+      assert.equal(healthy.version, "1.0.0");
+      assert.equal(healthy.status, "update");
+    }
+    assert.equal(list.find((item) => item.id === "com.independent").version, "2.0.0");
+    const rollback = h.events.find((event) => event[0] === "插件更新失败");
+    assert.match(rollback[1], /com.consumer: activation failed/);
+    h.failActivate = [];
+    assert.equal((await h.service.checkUpdates()).failures, 0);
+    assert(
+      h.service
+        .summaries()
+        .every((item) => item.running && !item.error && item.version === "2.0.0"),
+    );
+  });
+}
+
+test("failure attribution does not blame the manually updated provider for its consumer", async (t) => {
+  const nextProvider = { ...provider(), version: "2.0.0", artifactSha256: "b".repeat(64) };
+  const h = await applicationFixture([
+    registration(provider(), { available: nextProvider }),
+    registration(consumer()),
+  ]);
+  t.onTestFinished(() => h.service.close());
+  h.failActivate = ["com.consumer@1.0.0"];
+  await assert.rejects(h.service.install("com.provider"), /com.consumer: activation failed/);
+  const list = h.service.summaries();
+  assert.deepEqual(
+    list.filter((item) => item.error).map((item) => item.id),
+    ["com.consumer"],
+  );
+  assert.equal(list[0].running, true);
+  assert.equal(list[0].status, "update");
+  assert.equal(list[0].version, "1.0.0");
+});
+
+test("failure attribution preserves distinct candidate and recovery failures without blaming blocked peers", async (t) => {
+  const h = await applicationFixture([
+    registration(provider()),
+    registration(consumer()),
+    registration(downstream()),
+  ]);
+  t.onTestFinished(() => h.service.close());
+  h.catalog = {
+    format: 1,
+    plugins: [provider(), consumer(), downstream()].map((item) => ({
+      ...item,
+      version: "2.0.0",
+      artifactSha256: "b".repeat(64),
+    })),
+  };
+  h.failActivate = ["com.consumer@2.0.0", "com.provider@1.0.0"];
+  assert.equal((await h.service.checkUpdates()).failures, 1);
+  const list = h.service.summaries();
+  assert.deepEqual(
+    list.filter((item) => item.error).map((item) => item.id),
+    ["com.provider", "com.consumer"],
+  );
+  assert(list.filter((item) => item.error).every((item) => item.error === "activation failed"));
+  assert.equal(list[2].status, "blocked");
+  assert.match(list[2].blockedReason, /com.consumer/);
+});
+
+test("failure attribution records the plugin whose cleanup failed even when only its provider updates", async (t) => {
+  const h = await applicationFixture([registration(provider()), registration(consumer())]);
+  t.onTestFinished(() => h.service.close());
+  h.catalog = {
+    format: 1,
+    plugins: [{ ...provider(), version: "2.0.0", artifactSha256: "b".repeat(64) }, consumer()],
+  };
+  const deactivate = h.runtime.deactivate.bind(h.runtime);
+  let failCleanup = true;
+  h.runtime.deactivate = async (id) => {
+    await deactivate(id);
+    if (id === "com.consumer" && failCleanup) {
+      failCleanup = false;
+      throw new Error("cleanup failed");
+    }
+  };
+  assert.equal((await h.service.checkUpdates()).failures, 1);
+  const list = h.service.summaries();
+  assert.deepEqual(
+    list.filter((item) => item.error).map((item) => item.id),
+    ["com.consumer"],
+  );
+  assert.equal(list[1].error, "cleanup failed");
+  assert(list.every((item) => item.running && item.version === "1.0.0"));
+  assert.match(
+    h.events.find((event) => event[0] === "插件更新失败")[1],
+    /com.consumer: cleanup failed/,
+  );
+});
+
+test("failure attribution keeps persistence and validation errors at the operation level", async (t) => {
+  const h = await applicationFixture([
+    registration(provider(), {
+      available: { ...provider(), version: "2.0.0", artifactSha256: "b".repeat(64) },
+    }),
+    registration(consumer()),
+  ]);
+  t.onTestFinished(() => h.service.close());
+  h.failCommit = true;
+  await assert.rejects(h.service.install("com.provider"), /disk full/);
+  assert(
+    h.service.summaries().every((item) => item.running && !item.error && item.version === "1.0.0"),
+  );
+  h.failCommit = false;
+  let validations = 0;
+  await assert.rejects(
+    h.service.install("com.provider", () => {
+      if (++validations === 2) throw new Error("authorization expired");
+    }),
+    /authorization expired/,
+  );
+  assert(h.service.summaries().every((item) => item.running && !item.error));
+});
+
 test("persistence failure rolls back runtime instead of leaving disabled/removed state half applied", async () => {
   const h = await applicationFixture([registration(provider()), registration(consumer())]);
   h.failCommit = true;

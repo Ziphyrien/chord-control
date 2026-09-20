@@ -1,0 +1,21 @@
+{
+  "name": "@chord-control/telemetry-dashboard",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build && node build-static.mjs",
+    "sync:svelte": "svelte-kit sync",
+    "check:svelte": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+  },
+  "dependencies": {
+    "@chord-control/ui": "workspace:*",
+    "svelte": "^5.57.0"
+  },
+  "devDependencies": {
+    "@chord-control/kit": "workspace:*",
+    "@sveltejs/kit": "^2.70.3",
+    "svelte-check": "^4.7.6",
+    "vite-plus": "catalog:"
+  }
+}

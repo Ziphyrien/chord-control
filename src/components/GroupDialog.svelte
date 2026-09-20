@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { GroupConfirmation } from "../lib/session.ts";
-  import Modal from "./Modal.svelte";
+  import Modal from "@chord-control/ui/Modal.svelte";
   let {
     confirmation,
     busy,

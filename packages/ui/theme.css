@@ -1,0 +1,73 @@
+@import "./palette.css";
+
+:root {
+  --cc-radius: 10px;
+  --cc-font: 15px/1.6 system-ui, "Segoe UI", sans-serif;
+  --cc-overlay: #060c09b8;
+  --cc-modal-shadow: 0 24px 90px #0006;
+  --cc-popover-shadow: 0 8px 24px #0005;
+  --cc-modal-layer: 30;
+  --cc-popover-layer: 40;
+  background: var(--cc-background);
+  color: var(--cc-text);
+  font: var(--cc-font);
+}
+body {
+  margin: 0;
+}
+.cc-page *,
+.cc-page *::before,
+.cc-page *::after {
+  box-sizing: border-box;
+}
+.cc-page :where(button, textarea) {
+  color: inherit;
+  font: inherit;
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius);
+  background: var(--cc-surface);
+}
+.cc-page button {
+  min-height: 42px;
+  padding: 9px 16px;
+  cursor: pointer;
+}
+.cc-page button:enabled:hover {
+  background: var(--cc-accent);
+}
+.cc-page button:enabled:active {
+  border-color: var(--cc-focus);
+}
+.cc-page button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.cc-page :where(button, textarea, summary):focus-visible {
+  outline: 2px solid var(--cc-focus);
+  outline-offset: 3px;
+}
+.cc-page textarea {
+  display: block;
+  width: 100%;
+  min-height: 160px;
+  padding: 12px;
+  resize: vertical;
+}
+.cc-page label {
+  display: block;
+  margin-bottom: 8px;
+}
+.cc-page summary {
+  cursor: pointer;
+  color: var(--cc-muted);
+}
+.cc-page pre {
+  max-width: 100%;
+  padding: 16px;
+  background: var(--cc-surface);
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}

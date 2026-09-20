@@ -33,17 +33,18 @@ const runtime: ChordRuntime = new ChordRuntime({
   data: join(root, "data"),
   native,
   metrics,
+  revokePages: (id) => ui.revoke(id),
   snapshot: (): Json => operationalSnapshot(app.snapshot()),
   log: (id, detail) => activity.add("插件日志", `${id}: ${detail}`),
   present: async (id, visible) => {
     const plugin = repository.snapshot().plugins.find((item) => item.id === id);
     const title = plugin?.installed?.name ?? plugin?.available?.name ?? id;
     if (!visible) {
-      ui.revoke(id);
+      ui.revoke(id, "window");
       transport.emit({ type: "plugin_window", pluginId: id, title, visible });
       return;
     }
-    const page = await ui.open(id);
+    const page = await ui.open(id, "window");
     if (!object(page) || typeof page.url !== "string") throw new Error("插件 UI 地址无效");
     transport.emit({ type: "plugin_window", pluginId: id, title, visible, url: page.url });
   },

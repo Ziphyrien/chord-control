@@ -92,7 +92,7 @@ pub(crate) fn send_internal(app: &AppHandle, value: Value) -> Result<(), String>
         inner
             .connection
             .as_ref()
-            .ok_or("控制器离线，请从托盘重新启动")?,
+            .ok_or("连接已断开，请在托盘菜单选择“重新连接”")?,
         &value,
     )
 }

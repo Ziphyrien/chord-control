@@ -6,8 +6,8 @@ const PROTECTED = new Set([
 ]);
 const TITLES = new Map([
   ["desktop.open", "打开控制中心"],
-  ["desktop.quit", "退出控制器"],
-  ["set_settings", "修改控制器设置"],
+  ["desktop.quit", "退出 Chord Control"],
+  ["set_settings", "修改设置"],
 ]);
 
 /** Lifecycle topology stays in the controller; this hook only authorizes its proposed action. */

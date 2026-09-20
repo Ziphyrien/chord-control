@@ -17,7 +17,7 @@ pub(crate) fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
         ("show", "打开控制中心"),
         ("restart", "重新连接"),
         ("update", "检查并安装主程序更新"),
-        ("quit", "退出控制器"),
+        ("quit", "退出 Chord Control"),
     ]
     .into_iter()
     .map(|(id, text)| MenuItem::with_id(app, id, text, true, None::<&str>))

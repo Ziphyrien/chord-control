@@ -14,15 +14,15 @@ export default defineConfig({
   timeout: 30_000,
   use: {
     browserName: "chromium",
-    baseURL: externalUrl ?? "http://127.0.0.1:1420",
+    baseURL: externalUrl ?? "http://127.0.0.1:1431",
     viewport: { width: 1280, height: 900 },
     trace: "retain-on-failure",
   },
   webServer: externalUrl
     ? undefined
     : {
-        command: "vp dev",
-        url: "http://127.0.0.1:1420",
+        command: "vp dev --mode ui-test --port 1431",
+        url: "http://127.0.0.1:1431",
         reuseExistingServer: !process.env.CI,
         timeout: 30_000,
       },

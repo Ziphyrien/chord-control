@@ -255,7 +255,7 @@ pub(super) fn start(app: &AppHandle, fresh: bool) -> Result<(), String> {
                 let Some(delay) = budget.next() else {
                     exhausted = true;
                     run.log("Watchdog restart budget exhausted");
-                    crate::desktop::report(&handle, "守护进程连续异常，请重新启动程序");
+                    crate::desktop::report(&handle, "自动恢复功能异常，请重新启动 Chord Control");
                     continue;
                 };
                 if !wait(&run, &worker_cancel, delay) {

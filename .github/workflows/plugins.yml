@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - "plugins/**"
+      - "packages/**"
       - "sdk/**"
       - "shared/**"
       - "config/plugin-public.pem"
@@ -43,6 +44,16 @@ jobs:
           cache: true
           run-install: false
       - run: vp install --frozen-lockfile --ignore-scripts
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: plugins/telemetry/native -> ../../../build/plugin-native/com.chord.telemetry
+      - name: Verify plugin-owned Windows collector
+        run: |
+          cargo fmt --manifest-path plugins/telemetry/native/Cargo.toml -- --check
+          cargo test --locked --manifest-path plugins/telemetry/native/Cargo.toml --target-dir build/plugin-native/com.chord.telemetry
       - name: Set release timestamp
         shell: pwsh
         run: |

@@ -17,11 +17,11 @@ export class CommandError extends Error {}
 
 export const unavailableClient: ControllerClient = {
   async connect(receive) {
-    receive({ type: "disconnected", message: "无法连接控制器" });
+    receive({ type: "disconnected", message: "连接失败，请重试" });
     return () => {};
   },
   async send() {
-    throw new ConnectionError("无法连接控制器");
+    throw new ConnectionError("连接失败，请重试");
   },
 };
 
@@ -56,12 +56,13 @@ export function createControllerClient(
 
   async function send(command: ControllerCommand): Promise<Json> {
     const connection = current;
-    if (!connection?.active || !connection.unsubscribe) throw new ConnectionError("控制器尚未连接");
+    if (!connection?.active || !connection.unsubscribe)
+      throw new ConnectionError("尚未连接，请稍后重试");
     const id = crypto.randomUUID();
     return new Promise<Json>((resolve, reject) => {
       const timer = setTimeout(() => {
         connection.requests.delete(id);
-        reject(new CommandError("操作等待超时，请检查记录后重试"));
+        reject(new CommandError("操作超时，请先查看活动记录再重试"));
       }, timeoutMs);
       connection.requests.set(id, { resolve, reject, timer });
       void Promise.resolve()

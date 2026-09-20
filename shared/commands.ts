@@ -11,18 +11,18 @@ export function parseSettings(value: unknown): ControllerSettings {
     object(value) && value.appAutoUpdate !== undefined
       ? value.appAutoUpdate
       : defaults.appAutoUpdate;
+  if (!object(value)) throw new Error("设置格式无效，请重新打开设置后重试");
   if (
-    !object(value) ||
-    typeof value.autoUpdate !== "boolean" ||
     !Number.isInteger(value.checkIntervalMinutes) ||
     Number(value.checkIntervalMinutes) < 1 ||
     Number(value.checkIntervalMinutes) > 1440 ||
     !Number.isInteger(appInterval) ||
     Number(appInterval) < 1 ||
-    Number(appInterval) > 1440 ||
-    typeof appAutoUpdate !== "boolean"
+    Number(appInterval) > 1440
   )
-    throw new Error("检查间隔必须为 1–1440 分钟，自动更新必须为布尔值");
+    throw new Error("检查间隔请输入 1–1440 之间的整数（分钟）");
+  if (typeof value.autoUpdate !== "boolean" || typeof appAutoUpdate !== "boolean")
+    throw new Error("请选择是否自动更新");
   return {
     checkIntervalMinutes: Number(value.checkIntervalMinutes),
     autoUpdate: value.autoUpdate,

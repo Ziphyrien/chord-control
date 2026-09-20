@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
-import type { Json } from "../../../shared/protocol.ts";
+import type { Json, PluginSurface } from "../../../shared/protocol.ts";
 import { jsonValue, message, object, text } from "../../../shared/validation.ts";
 import type { PluginRuntime, Enqueue } from "../domain/ports.ts";
 
@@ -8,6 +8,7 @@ interface Page {
   pluginId: string;
   revision: string;
   token: string;
+  surface: PluginSurface;
 }
 type Runtime = Pick<PluginRuntime, "ui" | "call" | "revision">;
 const CSP =
@@ -61,6 +62,11 @@ export class PluginHttpServer {
       });
     });
   }
+  private current(page: Page): boolean {
+    return (
+      this.pages.get(page.token) === page && this.runtime.revision(page.pluginId) === page.revision
+    );
+  }
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const host = `127.0.0.1:${this.port}`;
     response.setHeader("Cache-Control", "no-store");
@@ -82,7 +88,7 @@ export class PluginHttpServer {
       response.writeHead(404).end();
       return;
     }
-    if (this.runtime.revision(page.pluginId) !== page.revision) {
+    if (!this.current(page)) {
       response.writeHead(410).end("插件已更新，请重新打开界面");
       return;
     }
@@ -93,8 +99,11 @@ export class PluginHttpServer {
       return;
     }
     if (match![2] === "ui" && request.method === "GET") {
-      const current = await this.gate(() => this.runtime.ui(page.pluginId));
-      if (current.revision !== page.revision) {
+      const current = await this.gate(async () => {
+        if (!this.current(page)) return undefined;
+        return this.runtime.ui(page.pluginId);
+      });
+      if (!this.current(page) || current?.revision !== page.revision) {
         response.writeHead(410).end("插件已更新，请重新打开界面");
         return;
       }
@@ -123,22 +132,26 @@ export class PluginHttpServer {
     const method = text(input.method, "插件方法", 100),
       value = input.input;
     const result = await this.gate(() => {
-      if (this.runtime.revision(page.pluginId) !== page.revision)
-        throw new Error("插件已更新，请重新打开界面");
+      if (!this.current(page)) throw new Error("插件已更新，请重新打开界面");
       return this.runtime.call(page.pluginId, method, value);
     });
     response.setHeader("Content-Type", "application/json");
     response.end(JSON.stringify({ ok: true, result }));
   }
-  async open(pluginId: string): Promise<Json> {
+  async open(pluginId: string, surface: PluginSurface = "panel"): Promise<Json> {
     if (!this.server?.listening) throw new Error("插件 UI 服务未运行");
     const current = await this.runtime.ui(pluginId);
     for (const page of this.pages.values())
-      if (page.pluginId === pluginId && page.revision === current.revision)
+      if (
+        page.pluginId === pluginId &&
+        page.surface === surface &&
+        page.revision === current.revision
+      )
         return this.address(page);
-    this.revoke(pluginId);
+    this.revoke(pluginId, surface);
     const page: Page = {
       pluginId,
+      surface,
       revision: current.revision,
       token: randomBytes(32).toString("hex"),
     };
@@ -146,11 +159,15 @@ export class PluginHttpServer {
     return this.address(page);
   }
   private address(page: Page): Json {
-    return { url: `http://127.0.0.1:${this.port}/${page.token}/ui`, revision: page.revision };
+    return {
+      url: `http://127.0.0.1:${this.port}/${page.token}/ui#${page.surface}`,
+      revision: page.revision,
+    };
   }
-  revoke(pluginId: string): void {
+  revoke(pluginId: string, surface?: PluginSurface): void {
     for (const [token, page] of this.pages)
-      if (page.pluginId === pluginId) this.pages.delete(token);
+      if (page.pluginId === pluginId && (!surface || page.surface === surface))
+        this.pages.delete(token);
   }
   async close(): Promise<void> {
     const server = this.server;

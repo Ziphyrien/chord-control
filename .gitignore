@@ -27,6 +27,7 @@ test-results/
 
 # Native generated output; retain the authored binary placeholder
 src-tauri/target/
+plugins/*/native/target/
 src-tauri/gen/
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep

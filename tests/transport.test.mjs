@@ -20,7 +20,7 @@ test(
     const html = await fetch(page.url);
     assert.equal(html.status, 200);
     assert.match(await html.text(), /Fixture UI/);
-    const result = await fetch(page.url.replace(/ui$/, "rpc"), {
+    const result = await fetch(new URL("rpc", page.url), {
       method: "POST",
       headers: { "Content-Type": "application/json", Origin: "null" },
       body: JSON.stringify({ method: "echo", input: { hello: "世界" } }),
@@ -58,6 +58,25 @@ test(
       "2.0.0",
     );
     assert.match(h.snapshot.plugins[0].error, /fixture activation failed/);
+    const restored = await h.command({ type: "plugin_ui", pluginId: fixtureId });
+    await h.command({
+      type: "set_enabled",
+      pluginId: fixtureId,
+      enabled: false,
+      affectedPluginIds: [],
+    });
+    assert.equal((await fetch(restored.url)).status, 404);
+    await h.command({
+      type: "set_enabled",
+      pluginId: fixtureId,
+      enabled: true,
+      affectedPluginIds: [],
+    });
+    const restarted = await h.command({ type: "plugin_ui", pluginId: fixtureId });
+    assert.equal(restarted.revision, restored.revision);
+    assert.notEqual(restarted.url, restored.url);
+    assert.equal((await fetch(restored.url)).status, 404);
+    assert.equal((await fetch(restarted.url)).status, 200);
   },
 );
 test(

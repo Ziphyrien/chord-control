@@ -32,6 +32,7 @@ import {
   sha256,
   withDirectoryLock,
 } from "../scripts/release-files.mjs";
+import { CHORD_VERSION, CHORD_MIN_HOST_VERSION } from "../shared/versions.ts";
 import { signingBytes, verifySigned } from "../shared/signing.ts";
 
 async function temporary(t) {
@@ -202,6 +203,8 @@ test("real compiler produces identical archives across workspaces and detects sa
     });
     const bytes = await readFile(join(outdir, `${release.id}-${release.artifactSha256}.zip`));
     verifySigned(release, publicKey);
+    assert.equal(release.chordVersion, CHORD_VERSION);
+    assert.equal(release.minHostVersion, CHORD_MIN_HOST_VERSION);
     validatePluginZip(bytes, release);
     builds.push({ release, bytes });
   }

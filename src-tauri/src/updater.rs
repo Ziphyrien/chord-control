@@ -74,7 +74,7 @@ fn stage(app: &AppHandle, bytes: &[u8]) -> Result<PathBuf, String> {
     if !bytes.starts_with(b"MZ")
         || bytes.get(offset..offset.saturating_add(4)) != Some(b"PE\0\0".as_slice())
     {
-        return Err("更新必须是已签名的 Windows NSIS 可执行文件".into());
+        return Err("更新安装包格式无效，请重新检查更新".into());
     }
     let id = unsafe { windows::Win32::System::Com::CoCreateGuid() }.map_err(|e| e.to_string())?;
     let directory = crate::desktop::data_dir(app)?

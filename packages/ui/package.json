@@ -1,0 +1,33 @@
+{
+  "name": "@chord-control/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    "./Page.svelte": "./Page.svelte",
+    "./Notice.svelte": "./Notice.svelte",
+    "./Facts.svelte": "./Facts.svelte",
+    "./Modal.svelte": "./Modal.svelte",
+    "./Select.svelte": "./Select.svelte",
+    "./Disclosure.svelte": "./Disclosure.svelte",
+    "./Checkbox.svelte": "./Checkbox.svelte",
+    "./Switch.svelte": "./Switch.svelte",
+    "./theme.css": {
+      "types": "./theme.d.ts",
+      "default": "./theme.css"
+    },
+    "./palette.css": {
+      "types": "./theme.d.ts",
+      "default": "./palette.css"
+    }
+  },
+  "dependencies": {
+    "bits-ui": "^2.19.2"
+  },
+  "peerDependencies": {
+    "svelte": "^5.33.0"
+  }
+}

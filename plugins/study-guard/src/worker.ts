@@ -3,7 +3,7 @@ import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/conte
 import { PluginDiagnostics } from "../../../sdk/diagnostics.ts";
 import { ControlHost, PluginUi } from "../../../sdk/index.ts";
 import { message } from "../../../shared/validation.ts";
-import { PasswordPrompt } from "../../password-pad/contract.ts";
+import { PasswordPrompt } from "@chord-control/contracts/password";
 import { createPlatform, type StudyPlatform, type Browser } from "./native.ts";
 
 export default defineFacet({

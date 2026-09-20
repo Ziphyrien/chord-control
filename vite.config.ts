@@ -1,5 +1,8 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig, lazyPlugins } from "vite-plus";
-import { svelte, vitePreprocess } from "@sveltejs/vite-plugin-svelte";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { sveltekit } from "@sveltejs/kit/vite";
+import { createStaticConfig } from "@chord-control/kit/static";
 import { catalogPublicKey, currentRepositorySlug } from "./scripts/repository-config.mjs";
 
 const ignored = ["src-tauri", "controller", "build", "release", ".local", "test-results"].map(
@@ -14,16 +17,19 @@ const generated = [
   "src-tauri/gen/**",
   "services/telemetry/worker-configuration.d.ts",
   "services/telemetry/.wrangler/**",
+  "**/.svelte-kit/**",
+  "services/**/dist/**",
+  "plugins/**/dist/**",
 ];
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   fmt: {
     printWidth: 100,
     tabWidth: 2,
     useTabs: false,
     endOfLine: "lf",
     svelte: true,
-    ignorePatterns: ["bun.lock", "src-tauri/Cargo.lock", ...generated],
+    ignorePatterns: ["bun.lock", "src-tauri/Cargo.lock", "plugins/**/Cargo.lock", ...generated],
   },
   lint: {
     categories: { correctness: "error" },
@@ -34,18 +40,44 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["tests/*.test.mjs", "src/**/*.test.ts"],
+    include: ["tests/*.test.mjs", "src/**/*.test.ts", "packages/ui/tests/*.test.mjs"],
     pool: "forks",
     maxWorkers: 4,
     hookTimeout: 15_000,
     sequence: { hooks: "stack" },
   },
-  plugins: lazyPlugins(() => [svelte({ configFile: false, preprocess: vitePreprocess() })]),
+  plugins: lazyPlugins(() =>
+    process.env.VITEST
+      ? [svelte({ configFile: false })]
+      : [
+          sveltekit(
+            createStaticConfig({
+              kit: {
+                alias: {
+                  $platform: fileURLToPath(
+                    new URL(
+                      mode === "ui-test" ? "./tests/browser.ts" : "./src/lib/platform.ts",
+                      import.meta.url,
+                    ),
+                  ),
+                },
+              },
+            }),
+          ),
+        ],
+  ),
   define: {
     __CHORD_CONTROL_REPOSITORY__: JSON.stringify(currentRepositorySlug() ?? ""),
     __CHORD_CONTROL_CATALOG_PUBLIC_KEY__: JSON.stringify(catalogPublicKey()),
   },
   clearScreen: false,
-  server: { host: "127.0.0.1", port: 1420, strictPort: true, watch: { ignored } },
-  build: { target: "es2022", sourcemap: true, outDir: "dist", emptyOutDir: true },
-});
+  optimizeDeps: { include: ["bits-ui"] },
+  server: {
+    host: "127.0.0.1",
+    port: 1420,
+    strictPort: true,
+    fs: { allow: [fileURLToPath(new URL(".", import.meta.url))] },
+    watch: { ignored },
+  },
+  build: { target: "es2022", sourcemap: true },
+}));

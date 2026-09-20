@@ -14,10 +14,11 @@ import {
   assertId,
   assertManifest,
   assertUrl,
+  compareVersion,
   safePath,
 } from "../shared/plugin-format.ts";
 import { assertResolvable } from "../shared/dependencies.ts";
-import { CHORD_VERSION } from "../shared/versions.ts";
+import { CHORD_VERSION, CHORD_MIN_HOST_VERSION } from "../shared/versions.ts";
 import { catalogPublicKey, currentRepositorySlug, distributionFor } from "./repository-config.mjs";
 import { normalizePublicKey } from "../shared/signing.ts";
 import {
@@ -31,6 +32,8 @@ import {
   sha256,
   withDirectoryLock,
 } from "./release-files.mjs";
+import { buildPluginUi } from "./build-plugin-ui.mjs";
+import { buildNativePlugin } from "./build-native-plugin.mjs";
 import { publisherKey, signed, validatePluginZip, zipDirectory } from "./plugin-artifacts.mjs";
 
 async function sourcePath(directory, name) {
@@ -85,6 +88,14 @@ async function compilePlugin({ directory, bundleDir, scratch, pkg }) {
     jsonBytes({ ...manifest, entries: { ...manifest.entries, worker: { ...worker, file } } }),
   );
   const control = pkg.control ?? {};
+  if (control.native) {
+    await buildNativePlugin({
+      manifest: await sourcePath(directory, control.native.manifest),
+      bundleDir,
+      declaration: control.native,
+      id: pkg.name,
+    });
+  }
   for (const asset of control.assets ?? []) {
     if (asset === "chord-facets.json" || asset === "ui.html")
       throw new Error(`Reserved asset: ${asset}`);
@@ -92,28 +103,16 @@ async function compilePlugin({ directory, bundleDir, scratch, pkg }) {
     await mkdir(dirname(destination), { recursive: true });
     await copyFile(await sourcePath(directory, asset), destination, 1);
   }
-  if (control.ui) {
-    let html = await readFile(await sourcePath(directory, control.ui), "utf8");
-    if (control.uiScript) {
-      if (html.split("<!--PLUGIN_SCRIPT-->").length !== 2)
-        throw new Error("UI template must contain exactly one <!--PLUGIN_SCRIPT-->");
-      const script = await build({
-        entryPoints: [await sourcePath(directory, control.uiScript)],
-        bundle: true,
-        write: false,
-        format: "iife",
-        platform: "browser",
-        target: "es2022",
-        minify: true,
-        legalComments: "none",
-      });
-      html = html.replace(
-        "<!--PLUGIN_SCRIPT-->",
-        () => `<script>${script.outputFiles[0].text.replace(/<\/script/gi, "<\\/script")}</script>`,
-      );
-    }
-    await writeFile(join(bundleDir, "ui.html"), html, { flag: "wx" });
-  } else if (control.uiScript) throw new Error("uiScript requires a UI template");
+  if (control.ui || control.uiScript || control.uiProject) {
+    await buildPluginUi({
+      directory,
+      bundleDir,
+      scratch,
+      control,
+      sourcePath,
+      title: control.name ?? pkg.name,
+    });
+  }
 }
 
 /** Existing public build API; compiler injection permits packaging tests without compilation. */
@@ -147,10 +146,13 @@ export async function buildPlugin({
         version: pkg.version,
         artifactUrl: `${baseUrl.replace(/\/$/, "")}/${artifactName}`,
         artifactSha256: hash,
-        minHostVersion: control.minHostVersion ?? "0.1.0",
+        minHostVersion:
+          compareVersion(control.minHostVersion ?? "0.1.0", CHORD_MIN_HOST_VERSION) > 0
+            ? control.minHostVersion
+            : CHORD_MIN_HOST_VERSION,
         chordVersion: CHORD_VERSION,
         entry: "worker",
-        ...(control.ui ? { ui: "ui.html" } : {}),
+        ...(control.ui || control.uiScript || control.uiProject ? { ui: "ui.html" } : {}),
         permissions: control.permissions ?? [],
         ...Object.fromEntries(
           ["services", "hooks", "icon", "color", "retireAfterHostVersion"]
@@ -245,5 +247,7 @@ if (isMain(import.meta.url)) {
     baseUrl,
     privateKey,
   });
-  console.log(`Built ${catalog.plugins.length} plugins and signed catalogue`);
+  console.log(
+    `Built ${catalog.plugins.length} plugins and ${privateKey ? "signed" : "unsigned local"} catalogue`,
+  );
 }

@@ -2,8 +2,10 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
+      "paths": { "$platform": ["src/lib/platform.ts"] },
       "entry": [
-        "src/main.ts",
+        "src/routes/**/+*.{ts,svelte}",
+        "src/lib/platform.ts",
         "src/**/*.test.ts",
         "controller/src/index.ts",
         "sdk/**/*.ts",
@@ -28,14 +30,26 @@
       "ignore": ["**/*.d.ts", "**/*.d.mts"]
     },
     "services/*": {
-      "entry": ["src/index.ts", "public/app.js"],
-      "project": ["src/**/*.ts", "public/*.js"],
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
       "ignore": ["worker-configuration.d.ts"],
       "ignoreDependencies": ["cloudflare"]
     },
+    "services/*/ui": {
+      "entry": ["src/routes/**/+*.{ts,svelte}", "vite.config.ts", "build-static.mjs"],
+      "project": ["src/**/*.{ts,js,svelte}", "testing/*.mjs", "vite.config.ts", "build-static.mjs"]
+    },
+    "plugins/*/ui": {
+      "entry": ["src/routes/**/+*.{ts,svelte}", "src/hooks.ts", "vite.config.ts"],
+      "project": ["src/**/*.{ts,svelte}", "vite.config.ts"]
+    },
+    "packages/*": {
+      "entry": ["*.ts", "*.svelte", "*.mjs", "tests/*.test.mjs"],
+      "project": ["**/*.{ts,svelte,mjs}"]
+    },
     "plugins/*": {
-      "entry": ["src/worker.ts", "ui/main.ts", "contract.ts"],
-      "project": ["src/**/*.ts", "ui/**/*.ts", "contract.ts"]
+      "entry": ["src/worker.ts"],
+      "project": ["src/**/*.ts", "input.ts"]
     }
   },
   "ignoreDependencies": [

@@ -9,14 +9,24 @@ async function sources(directory) {
   const found = [];
   for (const entry of await readdir(join(root, directory), { withFileTypes: true })) {
     const path = `${directory}/${entry.name}`;
+    if (
+      ["node_modules", ".svelte-kit", ".wrangler", "target", "dist", "tests", "testing"].includes(
+        entry.name,
+      )
+    )
+      continue;
     if (entry.isDirectory()) found.push(...(await sources(path)));
-    else if (/\.(ts|mjs|svelte)$/.test(path) && !path.endsWith(".test.ts")) found.push(path);
+    else if (/\.(ts|js|mjs|svelte)$/.test(path) && !path.endsWith(".test.ts")) found.push(path);
   }
   return found;
 }
 test("application boundaries exclude platform adapters, business plugins and dependency cycles", async () => {
   const files = (
-    await Promise.all(["src", "controller/src", "shared", "sdk", "scripts", "plugins"].map(sources))
+    await Promise.all(
+      ["src", "controller/src", "shared", "sdk", "scripts", "plugins", "packages", "services"].map(
+        sources,
+      ),
+    )
   ).flat();
   const graph = new Map(),
     violations = [];
@@ -49,7 +59,9 @@ test("application boundaries exclude platform adapters, business plugins and dep
     for (const specifier of imports) {
       const target = specifier.startsWith(".")
         ? relative(root, resolve(root, dirname(path), specifier)).replaceAll("\\", "/")
-        : specifier;
+        : specifier.startsWith("@chord-control/")
+          ? `packages/${specifier.slice("@chord-control/".length)}`
+          : specifier;
       const local = files.find((file) => file === target || file === `${target}.ts`);
       if (local) dependencies.push(local);
       const forbid = (condition, reason) => {
@@ -100,6 +112,43 @@ test("application boundaries exclude platform adapters, business plugins and dep
       forbid(
         path.startsWith("plugins/") && /^(src|controller|scripts)\//.test(target),
         "plugins use SDK contracts",
+      );
+      forbid(
+        path.startsWith("plugins/") &&
+          target.startsWith("plugins/") &&
+          path.split("/")[1] !== target.split("/")[1],
+        "plugins depend on shared service contracts rather than sibling source",
+      );
+      forbid(
+        path.startsWith("packages/ui/") &&
+          /^(src|controller|sdk|shared|plugins|scripts|packages\/contracts)\//.test(target),
+        "reusable UI receives data and callbacks",
+      );
+      forbid(
+        path.startsWith("packages/ui/") &&
+          /^(node:|@tauri-apps\/|@earendil-works\/chord|\$app\/|\$env\/)/.test(target),
+        "reusable UI is independent of host and application framework",
+      );
+      forbid(
+        path.startsWith("src/pages/") && /^(\$app\/|@tauri-apps\/)/.test(target),
+        "desktop pages receive navigation and native behavior from their application",
+      );
+      forbid(
+        path.startsWith("packages/kit/") && /^(src|controller|sdk|plugins|services)\//.test(target),
+        "shared Kit configuration cannot depend on application implementations",
+      );
+      forbid(
+        path.startsWith("services/telemetry/ui/") && target.startsWith("services/telemetry/src/"),
+        "dashboard calls the service through its HTTP client",
+      );
+      forbid(
+        path.startsWith("packages/contracts/") &&
+          /^(src|controller|sdk|plugins|scripts|packages\/ui)\//.test(target),
+        "service contracts contain no provider implementation",
+      );
+      forbid(
+        /^(src|controller|sdk)\//.test(path) && target.startsWith("packages/contracts/"),
+        "host SDK does not own plugin business contracts",
       );
     }
     graph.set(path, dependencies);

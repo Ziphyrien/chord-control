@@ -1,9 +1,12 @@
 {
   "name": "com.chord.study-guard",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "private": true,
   "description": "浏览器启动验证与 Windows 默认壁纸保护，保留原有设置以便恢复",
   "type": "module",
+  "dependencies": {
+    "@chord-control/contracts": "workspace:*"
+  },
   "control": {
     "name": "学习权限",
     "minHostVersion": "0.3.0",
@@ -18,7 +21,6 @@
         "study.password.v1"
       ]
     },
-    "ui": "ui/index.html",
-    "uiScript": "ui/main.ts"
+    "uiProject": "ui/vite.config.ts"
   }
 }

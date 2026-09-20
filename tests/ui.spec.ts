@@ -6,7 +6,7 @@ import type {
   PluginSummary,
 } from "../shared/protocol.ts";
 
-const baseUrl = process.env.CHORD_UI_URL ?? "http://127.0.0.1:1420";
+const baseUrl = process.env.CHORD_UI_URL ?? "http://127.0.0.1:1431";
 function plugin(id: string, name: string, patch: Partial<PluginSummary> = {}): PluginSummary {
   return {
     id,
@@ -78,7 +78,7 @@ async function boot(
     return { result: null, snapshot: initial };
   });
   await page.exposeFunction("desktopCommand", async (_command: string, enabled = false) => enabled);
-  await page.goto(`${baseUrl}/tests/browser.html`);
+  await page.goto(baseUrl);
   return { commands, errors };
 }
 
@@ -104,7 +104,7 @@ test("adding a plugin opens its sandbox and activities can be filtered", async (
   });
   await page.route("https://plugin.test/notes", (route) =>
     route.fulfill({
-      contentType: "text/html",
+      contentType: "text/html; charset=utf-8",
       body: '<!doctype html><html lang="zh-CN"><title>便笺</title><body><label>便笺内容<textarea></textarea></label></body></html>',
     }),
   );
@@ -145,7 +145,7 @@ test("loading, offline, retry and business rejection remain distinct", async ({ 
       return ++snapshots === 1 ? initial.promise : { result: null, snapshot: snapshot() };
     return { result: null, message: "发布者暂时不可用" };
   });
-  await expect(page.getByText("正在连接控制器…", { exact: true })).toBeVisible();
+  await expect(page.getByText("正在连接…", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "添加插件", exact: true })).toBeDisabled();
   initial.resolve({ result: null, snapshot: snapshot() });
   await page.getByRole("button", { name: "检查更新", exact: true }).click();
@@ -214,8 +214,9 @@ test("late panel response cannot reopen a closed view or replace a new connectio
   await expect(page.getByRole("heading", { name: "插件", exact: true })).toBeVisible();
   await expect(page.locator("iframe")).toHaveCount(0);
   expect(await page.evaluate(() => window.testBridge.subscriptions())).toBe(1);
-  await page.evaluate(() => window.testBridge.dispose());
-  expect(await page.evaluate(() => window.testBridge.subscriptions())).toBe(0);
+  await page.getByRole("navigation").getByRole("button", { name: "活动", exact: true }).click();
+  await expect(page).toHaveURL(/\/activities$/);
+  expect(await page.evaluate(() => window.testBridge.subscriptions())).toBe(1);
 });
 
 test("settings draft survives snapshots and independent desktop operations", async ({ page }) => {

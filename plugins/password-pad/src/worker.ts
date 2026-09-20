@@ -1,7 +1,7 @@
 import { defineFacet } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { ControlHost, PluginUi } from "../../../sdk/index.ts";
-import { PasswordPrompt } from "../contract.ts";
+import { PasswordPrompt } from "@chord-control/contracts/password";
 import { Challenges } from "./challenges.ts";
 
 export default defineFacet({
@@ -52,7 +52,8 @@ export default defineFacet({
               typeof input.id !== "string"
             )
               throw new Error("验证提交格式错误");
-            return { approved: challenges.submit(input.id, input.revision, input.sequence) };
+            const approved = challenges.submit(input.id, input.revision, input.sequence);
+            return { approved, retryable: !approved && challenges.view()?.id === input.id };
           }
           default:
             throw new Error("无效的密保盘操作");

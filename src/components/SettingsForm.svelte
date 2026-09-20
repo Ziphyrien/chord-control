@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Checkbox, Switch } from "bits-ui";
+  import Checkbox from "@chord-control/ui/Checkbox.svelte";
+  import Switch from "@chord-control/ui/Switch.svelte";
   import type { ControllerSettings } from "../../shared/protocol.ts";
   import { parseSettings } from "../../shared/commands.ts";
   let {
@@ -52,9 +53,9 @@
       <div>
         <label for="autostart">登录时自动启动</label>
       </div>
-      <Switch.Root
+      <Switch
         id="autostart"
-        class="switch"
+        label="登录时自动启动"
         bind:checked={
           () => autostart ?? false,
           () => {
@@ -62,9 +63,7 @@
           }
         }
         disabled={!desktopAvailable || autostart === null || autostartBusy}
-      >
-        <Switch.Thumb class="switch-thumb" />
-      </Switch.Root>
+      />
     </div>
     {#if desktopAvailable && autostart === null}<p class="muted">
         {autostartBusy ? "正在读取启动设置…" : "启动设置暂时不可用，请重新连接后重试。"}
@@ -92,23 +91,12 @@
               update({ appCheckIntervalMinutes: Number(event.currentTarget.value) })}
           /></label
         >
-        <div class="checkbox">
-          <Checkbox.Root
-            id="app-auto-update"
-            class="checkbox-control"
-            bind:checked={() => draft.appAutoUpdate, (appAutoUpdate) => update({ appAutoUpdate })}
-            disabled={!available}
-          >
-            {#snippet children({ checked })}
-              {#if checked}
-                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                  <path d="m3 8 3 3 7-7" fill="none" stroke="currentColor" stroke-width="2" />
-                </svg>
-              {/if}
-            {/snippet}
-          </Checkbox.Root>
-          <label for="app-auto-update">自动安装主程序更新</label>
-        </div>
+        <Checkbox
+          id="app-auto-update"
+          label="自动安装主程序更新"
+          bind:checked={() => draft.appAutoUpdate, (appAutoUpdate) => update({ appAutoUpdate })}
+          disabled={!available}
+        />
       </fieldset>
     </section>
     <section class="settings-section" aria-labelledby="update-title">
@@ -125,23 +113,12 @@
             oninput={(event) => update({ checkIntervalMinutes: Number(event.currentTarget.value) })}
           /></label
         >
-        <div class="checkbox">
-          <Checkbox.Root
-            id="auto-update"
-            class="checkbox-control"
-            bind:checked={() => draft.autoUpdate, (autoUpdate) => update({ autoUpdate })}
-            disabled={!available}
-          >
-            {#snippet children({ checked })}
-              {#if checked}
-                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-                  <path d="m3 8 3 3 7-7" fill="none" stroke="currentColor" stroke-width="2" />
-                </svg>
-              {/if}
-            {/snippet}
-          </Checkbox.Root>
-          <label for="auto-update">自动安装新增插件和更新</label>
-        </div>
+        <Checkbox
+          id="auto-update"
+          label="自动安装新增插件和更新"
+          bind:checked={() => draft.autoUpdate, (autoUpdate) => update({ autoUpdate })}
+          disabled={!available}
+        />
         <label class="field"
           >插件来源地址<input
             type="url"
