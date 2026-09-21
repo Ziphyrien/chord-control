@@ -87,6 +87,7 @@ export async function collectWindows(
   if (process.platform !== "win32")
     return { ok: false, stage: "platform", error: "Windows 采集器仅支持 Windows", observedAt };
   let stage = "launch";
+  let closed: Promise<void> | undefined;
   try {
     signal.throwIfAborted();
     const request = observationRequest(host);
@@ -105,6 +106,8 @@ export async function collectWindows(
         },
         (error, stdout) => (error ? reject(error) : resolve(stdout)),
       );
+      // AbortError can arrive before Windows releases the executable image.
+      closed = new Promise<void>((done) => child.once("close", () => done()));
       // A child exiting before it reads stdin may report EPIPE. Keep it in the same outcome.
       child.stdin?.on("error", reject);
       child.stdin?.end(input);
@@ -123,5 +126,7 @@ export async function collectWindows(
           : null,
       observedAt,
     };
+  } finally {
+    await closed;
   }
 }

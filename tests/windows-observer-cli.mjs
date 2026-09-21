@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { resolve } from "node:path";
+import { unlinkSync } from "node:fs";
+import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { collectWindows } from "../plugins/telemetry/src/windows.ts";
 import { projectWindowsResponse } from "../plugins/telemetry/src/windows-response.ts";
 
 assert.equal(process.platform, "win32");
@@ -45,6 +49,25 @@ for (const probe of result.registry) {
 }
 assert.equal(result.vendorEvidence.probes.length, 8);
 assert.ok(result.vendorEvidence.probes.every((probe) => probe.status === "ready"));
+// Cancellation must finish the native process before an update removes its old EXE.
+const root = await mkdtemp(join(tmpdir(), "chord-observer-close-"));
+try {
+  await mkdir(join(root, "native"));
+  const copy = join(root, "native/chord-observer.exe");
+  for (const delay of [0, 2, 10, 50, 0, 2, 10, 50]) {
+    await copyFile(executable, copy);
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), delay);
+    try {
+      await collectWindows(root, {}, abort.signal);
+      unlinkSync(copy);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+} finally {
+  await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+}
 console.log(
-  "Native observer to JavaScript contract passed: real process token and eight registry descriptors.",
+  "Native observer contract passed: process token, eight registry descriptors and cancellation followed by immediate EXE removal.",
 );

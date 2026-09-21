@@ -57,11 +57,13 @@ export async function buildNativePlugin({ manifest, bundleDir, declaration, id }
       bytes.length < 64 ||
       bytes.subarray(0, 2).toString() !== "MZ" ||
       pe < 64 ||
-      pe + 6 > bytes.length ||
+      pe + 12 > bytes.length ||
       bytes.readUInt32LE(pe) !== 0x4550 ||
       bytes.readUInt16LE(pe + 4) !== 0x8664
     )
       throw new Error("Native plugin asset is not a Windows x64 executable");
+    if (bytes.readUInt32LE(pe + 8) !== 0)
+      throw new Error("Native plugin asset must have a fixed zero PE timestamp");
     await mkdir(dirname(destination), { recursive: true });
     await copyFile(binary, destination, 1);
   });

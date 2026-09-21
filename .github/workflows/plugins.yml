@@ -47,6 +47,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      - name: Select LLVM linker for reproducible plugin assets
+        shell: pwsh
+        run: |
+          $pluginRustRoot = rustc --print sysroot
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot locate Rust sysroot' }
+          $pluginLinker = Join-Path $pluginRustRoot.Trim() 'lib/rustlib/x86_64-pc-windows-msvc/bin/rust-lld.exe'
+          if (!(Test-Path -LiteralPath $pluginLinker)) { throw 'Rust LLVM linker is missing' }
+          "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$pluginLinker" >> $env:GITHUB_ENV
       - uses: Swatinem/rust-cache@v2.9.2
         with:
           workspaces: plugins/telemetry/native -> ../../../build/plugin-native/com.chord.telemetry
@@ -66,6 +74,10 @@ jobs:
         run: vp node scripts/build-plugins.mjs
         env:
           PLUGIN_SIGNING_PRIVATE_KEY: ${{ secrets.PLUGIN_SIGNING_PRIVATE_KEY }}
+      - name: Verify reproducible native asset and release contract
+        run: |
+          vp node scripts/test-native-plugin-build.mjs
+          vp node tests/windows-observer-cli.mjs build/plugin-native/com.chord.telemetry/x86_64-pc-windows-msvc/release/chord-observer.exe
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: signed-plugin-catalogue
