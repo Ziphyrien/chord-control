@@ -142,10 +142,6 @@
         "vite-plus": "catalog:",
       },
     },
-    "plugins/upgrade-bridge": {
-      "name": "com.chord.upgrade-bridge",
-      "version": "1.0.1",
-    },
     "plugins/wallpaper-policy": {
       "name": "com.chord.wallpaper-policy",
       "version": "1.0.0",
@@ -759,8 +755,6 @@
     "com.chord.study-guard": ["com.chord.study-guard@workspace:plugins/study-guard"],
 
     "com.chord.telemetry": ["com.chord.telemetry@workspace:plugins/telemetry"],
-
-    "com.chord.upgrade-bridge": ["com.chord.upgrade-bridge@workspace:plugins/upgrade-bridge"],
 
     "com.chord.wallpaper-policy": ["com.chord.wallpaper-policy@workspace:plugins/wallpaper-policy"],
 

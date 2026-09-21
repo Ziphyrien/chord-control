@@ -59,11 +59,6 @@ async function compilePlugin({ directory, bundleDir, scratch, pkg }) {
     target: "node26",
     minify: true,
     legalComments: "none",
-    define: {
-      __CHORD_APP_UPDATER__: JSON.stringify(
-        (await readJson(join(repositoryRoot, "src-tauri/tauri.conf.json"))).plugins.updater,
-      ),
-    },
   });
   const entry = join(scratch, "entry.mjs");
   await writeFile(entry, result.outputFiles[0].contents);
