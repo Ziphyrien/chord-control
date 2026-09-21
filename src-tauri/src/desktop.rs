@@ -11,7 +11,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Manager, State};
-use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
 
 const ACTION_TIMEOUT: Duration = Duration::from_secs(180);
@@ -256,12 +255,6 @@ pub(crate) fn ensure_autostart(app: &AppHandle) -> Result<(), String> {
     if cfg!(debug_assertions) {
         return Ok(());
     }
-    let directory = data_dir(app)?;
-    fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
-    let marker = directory.join("first-run-complete");
-    if marker.try_exists().map_err(|e| e.to_string())? {
-        return Ok(());
-    }
-    app.autolaunch().enable().map_err(|e| e.to_string())?;
-    fs::write(marker, b"1").map_err(|e| e.to_string())
+    let _ = app;
+    crate::startup::ensure()
 }

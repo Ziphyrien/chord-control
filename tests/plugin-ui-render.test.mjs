@@ -193,6 +193,8 @@ test(
     await expect(page.locator("#detail")).toBeVisible();
     await page.goto("http://plugins.test/study-guard/signed-generation/ui");
     await expect(page.locator('[data-browser="edge"]')).toBeEnabled();
+    await expect(page.getByRole("heading", { name: "浏览器保护" })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("壁纸");
     await page.goto("http://plugins.test/password-pad/signed-generation/ui#panel");
     const preview = page.locator("#cells button");
     await expect(preview).toHaveCount(36);

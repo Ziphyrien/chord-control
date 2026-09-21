@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { HostService } from "../../../sdk/index.ts";
 import type { Json } from "../../../shared/protocol.ts";
-import { WallpaperPolicy } from "./wallpaper.ts";
 import {
   BROWSER_NAMES,
   BrowserGate,
@@ -17,14 +16,8 @@ export interface StudyPlatform {
   start(blocked: (browser: Browser) => void): Promise<void>;
   launch(browser: Browser): Promise<void>;
   dispose(): Promise<void>;
-  measure(): Promise<{ checks: number; passed: number; owned: boolean; errors: string[] }>;
 }
-export function createPlatform(
-  host: HostService,
-  dataDir: string,
-  log: (message: string) => void,
-): StudyPlatform {
-  const policy = new WallpaperPolicy(host, dataDir);
+export function createPlatform(host: HostService, log: (message: string) => void): StudyPlatform {
   const gate = new BrowserGate();
   let active = false;
   let disposed = false;
@@ -43,11 +36,11 @@ export function createPlatform(
     timer = setTimeout(() => {
       void serialize(async () => {
         try {
-          if (!active || !(await policy.owns())) return;
+          if (!active) return;
           const rejected = gate.blocked(await rows());
           const prompted = new Set<Browser>();
           for (const row of rejected) {
-            if (!active || !(await policy.owns())) break;
+            if (!active) break;
             try {
               await call("process.terminate", { ...identity(row) });
               prompted.add(browserOf(row));
@@ -88,27 +81,21 @@ export function createPlatform(
     throw new Error("未找到已安装的浏览器");
   }
   return {
-    measure: () => serialize(() => policy.measure()),
     start(blocked) {
       return serialize(async () => {
-        if (disposed) throw new Error("学习权限已停止");
+        if (disposed) throw new Error("浏览器保护已停止");
         if (active) return;
-        // Readiness is checked before any policy write.
         gate.initialize(await rows());
-        await policy.apply();
-        if (disposed) {
-          await policy.restore();
-          return;
-        }
+        if (disposed) return;
         active = true;
         schedule(blocked);
       });
     },
     launch(browser) {
       return serialize(async () => {
-        if (!active || disposed || !(await policy.owns())) throw new Error("学习权限已停止");
+        if (!active || disposed) throw new Error("浏览器保护已停止");
         const executable = await executableFor(browser);
-        if (!active || disposed) throw new Error("学习权限已停止");
+        if (!active || disposed) throw new Error("浏览器保护已停止");
         const spawned = identity(
           await call("process.spawn", { executable, args: ["--new-window"] }),
         );
@@ -120,7 +107,6 @@ export function createPlatform(
       active = false;
       clearTimeout(timer);
       await work;
-      await policy.restore();
     },
   };
 }

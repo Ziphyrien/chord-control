@@ -1,0 +1,22 @@
+{
+  "name": "com.chord.wallpaper-policy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Windows 默认壁纸与背景策略保护，保留原有设置以便恢复",
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/chord": "0.86.1"
+  },
+  "control": {
+    "name": "壁纸策略",
+    "minHostVersion": "0.4.6",
+    "permissions": [
+      "registry-current-user",
+      "wallpaper"
+    ],
+    "services": {
+      "provides": [],
+      "requires": []
+    }
+  }
+}

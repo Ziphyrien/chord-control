@@ -64,6 +64,7 @@ pub struct RegistryRequest {
     pub name: String,
     pub desired_access: u32,
     pub allow_parent: bool,
+    pub observed_at_ms: Option<u64>,
 }
 
 pub fn read_bounded(reader: impl Read) -> Probe<Vec<u8>> {
@@ -221,6 +222,15 @@ pub fn registry_request(value: &Value) -> Probe<RegistryRequest> {
         )
     })?;
     identifier(&request.event_id, 128, "registry.validate")?;
+    if request
+        .observed_at_ms
+        .is_some_and(|ms| ms > 9_007_199_254_740_991)
+    {
+        return Err(Failure::invalid(
+            "registry.validate",
+            "observedAtMs must be a nonnegative safe integer",
+        ));
+    }
     if request.pid == 0 {
         return Err(Failure::invalid("registry.validate", "pid must be nonzero"));
     }
@@ -318,6 +328,31 @@ mod tests {
             assert!(parse_request(&serde_json::to_vec(&bad).unwrap()).is_err());
         }
         assert!(process_request(&json!({"role":"self","pid":1,"probe":"unknown"})).is_err());
+    }
+
+    #[test]
+    fn observed_timestamp_is_optional_but_must_be_a_nonnegative_safe_integer() {
+        let mut request = json!({"eventId":"e","pid":1,"createdAt":"1","path":"Software","name":"","desiredAccess":1,"allowParent":false});
+        assert_eq!(registry_request(&request).unwrap().observed_at_ms, None);
+        for valid in [0u64, 1, 1_780_000_000_000, 9_007_199_254_740_991] {
+            request["observedAtMs"] = json!(valid);
+            assert_eq!(
+                registry_request(&request).unwrap().observed_at_ms,
+                Some(valid)
+            );
+        }
+        for invalid in [
+            json!(-1),
+            json!(1.5),
+            json!("123"),
+            json!(9_007_199_254_740_992u64),
+        ] {
+            request["observedAtMs"] = invalid;
+            assert_eq!(
+                registry_request(&request).unwrap_err().stage,
+                "registry.validate"
+            );
+        }
     }
 
     #[test]

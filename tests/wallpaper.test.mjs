@@ -4,15 +4,15 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from "node:fs/promis
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { WallpaperPolicy } from "../plugins/study-guard/src/wallpaper.ts";
+import { WallpaperPolicy } from "../plugins/wallpaper-policy/src/wallpaper.ts";
 import {
   POLICY_KEYS,
   policyValues,
   stringValue,
   dwordValue,
   legacyValue,
-} from "../plugins/study-guard/src/registry.ts";
-import { parseBackup, withJournalLock } from "../plugins/study-guard/src/journal.ts";
+} from "../plugins/wallpaper-policy/src/registry.ts";
+import { parseBackup, withJournalLock } from "../plugins/wallpaper-policy/src/journal.ts";
 const originalWallpaper = "C:\\Original\\wallpaper.jpg";
 const key = (entry) => `${entry.path}|${entry.name}`;
 async function fixture(t) {

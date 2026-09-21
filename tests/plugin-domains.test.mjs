@@ -1,4 +1,6 @@
-import { test } from "vite-plus/test";
+import { test, vi } from "vite-plus/test";
+import { createPlatform } from "../plugins/study-guard/src/native.ts";
+import { deferred } from "./helpers.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -113,4 +115,105 @@ test("failed atomic note replacement does not poison subsequent saves", async (t
   await notes.save("recovered");
   await notes.drain();
   assert.equal(await notes.read(), "recovered");
+});
+
+test("browser platform monitors and launches with no registry, wallpaper, filesystem or lease access", async (t) => {
+  vi.useFakeTimers();
+  t.onTestFinished(() => vi.useRealTimers());
+  let processes = [browser(1)];
+  const calls = [];
+  const prompts = [];
+  const platform = createPlatform(
+    {
+      async native(operation, input) {
+        calls.push({ operation, input });
+        if (operation === "process.list") return processes;
+        if (operation === "process.terminate") {
+          processes = processes.filter((item) => item.pid !== input.pid);
+          return null;
+        }
+        if (operation === "process.spawn") return identity(browser(9));
+        throw new Error(`RegCreateKey denied: ${operation}`);
+      },
+    },
+    () => {},
+  );
+  t.onTestFinished(() => platform.dispose());
+  await platform.start((value) => prompts.push(value));
+  processes = [browser(1), browser(2)];
+  await vi.advanceTimersByTimeAsync(350);
+  assert.deepEqual(prompts, ["chrome"]);
+  assert.equal(calls.filter((item) => item.operation === "process.terminate").length, 1);
+  await platform.launch("chrome");
+  processes = [browser(1), browser(9), browser(10, "child", 9), browser(20)];
+  await vi.advanceTimersByTimeAsync(350);
+  assert.deepEqual(
+    calls.filter((item) => item.operation === "process.terminate").map((item) => item.input.pid),
+    [2, 20],
+  );
+  assert(calls.every((item) => item.operation.startsWith("process.")));
+  await platform.dispose();
+  const count = calls.length;
+  await vi.advanceTimersByTimeAsync(1000);
+  assert.equal(calls.length, count);
+  await assert.rejects(platform.launch("chrome"), /已停止/);
+});
+
+test("dispose during browser startup prevents monitoring from restarting", async (t) => {
+  vi.useFakeTimers();
+  t.onTestFinished(() => vi.useRealTimers());
+  const entered = deferred(),
+    release = deferred();
+  let calls = 0;
+  const platform = createPlatform(
+    {
+      async native(operation) {
+        assert.equal(operation, "process.list");
+        calls++;
+        entered.resolve();
+        await release.promise;
+        return [];
+      },
+    },
+    () => {},
+  );
+  const starting = platform.start(() => assert.fail("disposed platform prompted"));
+  await entered.promise;
+  const stopping = platform.dispose();
+  release.resolve();
+  await Promise.all([starting, stopping]);
+  await vi.advanceTimersByTimeAsync(1000);
+  assert.equal(calls, 1);
+  await assert.rejects(
+    platform.start(() => {}),
+    /已停止/,
+  );
+});
+
+test("dispose during a browser snapshot drains work without terminating or prompting", async (t) => {
+  vi.useFakeTimers();
+  t.onTestFinished(() => vi.useRealTimers());
+  const entered = deferred(),
+    release = deferred();
+  let lists = 0;
+  const platform = createPlatform(
+    {
+      async native(operation) {
+        assert.equal(operation, "process.list");
+        if (++lists === 1) return [];
+        entered.resolve();
+        await release.promise;
+        return [browser(5)];
+      },
+    },
+    () => {},
+  );
+  await platform.start(() => assert.fail("disposed platform prompted"));
+  const ticking = vi.advanceTimersByTimeAsync(350);
+  await entered.promise;
+  const stopping = platform.dispose();
+  release.resolve();
+  await Promise.all([stopping, ticking]);
+  await vi.advanceTimersByTimeAsync(1000);
+  assert.equal(lists, 2);
 });

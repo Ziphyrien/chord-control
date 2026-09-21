@@ -1,3 +1,5 @@
+import { registryEvidence } from "./registry-evidence.js";
+
 const UNKNOWN = "未知";
 export const DIAGNOSTIC_LIMIT = 16;
 const text = (value) => (value === null || value === undefined ? UNKNOWN : String(value));
@@ -163,6 +165,6 @@ export function diagnosticView(host = {}) {
     ]),
     registry,
     registryEmpty: `未知 · ${windows ? "未提供 DACL 复查结果" : probeState}`,
-    vendor: "归因证据：未提供",
+    ...registryEvidence(windows, events),
   };
 }

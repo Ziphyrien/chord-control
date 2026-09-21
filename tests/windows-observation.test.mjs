@@ -59,6 +59,33 @@ test("old hosts retain process probes and malformed or unrelated operations neve
   });
   assert.equal(create.registry[0].allowParent, true);
 });
+test("event correlation uses the original failure time and never substitutes collection time", () => {
+  const observedAtMs = Date.parse("2026-09-21T03:20:17Z");
+  const request = observationRequest({
+    native: {
+      failures: {
+        events: [
+          event(1, { observedAtMs }),
+          event(2),
+          event(3, { observedAtMs: -1 }),
+          event(4, { observedAtMs: "2026-09-21" }),
+        ],
+      },
+    },
+  });
+  assert.equal(
+    request.registry.find((item) => item.eventId === "native-1").observedAtMs,
+    observedAtMs,
+  );
+  for (const id of [2, 3, 4])
+    assert(
+      !Object.hasOwn(
+        request.registry.find((item) => item.eventId === `native-${id}`),
+        "observedAtMs",
+      ),
+    );
+});
+
 test("collector missing or cancelled is an explicit failure and can still form an accepted report", async () => {
   const windows = await collectWindows("Z:/missing-plugin-test", {}, new AbortController().signal);
   assert.equal(windows.ok, false);

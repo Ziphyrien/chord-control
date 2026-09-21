@@ -1,19 +1,17 @@
 {
   "name": "com.chord.study-guard",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "private": true,
-  "description": "浏览器启动验证与 Windows 默认壁纸保护，保留原有设置以便恢复",
+  "description": "通过密保盘验证新的浏览器启动，保留已打开的浏览器",
   "type": "module",
   "dependencies": {
     "@chord-control/contracts": "workspace:*"
   },
   "control": {
-    "name": "学习权限",
-    "minHostVersion": "0.3.0",
+    "name": "浏览器保护",
+    "minHostVersion": "0.4.6",
     "permissions": [
-      "process-control",
-      "registry-current-user",
-      "wallpaper"
+      "process-control"
     ],
     "services": {
       "provides": [],

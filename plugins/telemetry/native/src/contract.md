@@ -55,6 +55,7 @@ Input must be JSON without BOM or trailing non-whitespace data.
   `KEY_CREATE_SUB_KEY=4`, `KEY_ENUMERATE_SUB_KEYS=8`, `KEY_NOTIFY=16` (allowed mask 31).
   No standard, generic, MAXIMUM_ALLOWED, WOW64 selector, CREATE_LINK or ALL_ACCESS masks.
 - `allowParent`: required boolean. Only missing-key errors permit ancestor fallback.
+- `observedAtMs`: optional nonnegative safe integer Unix milliseconds; absent/stale times cannot be correlated with historical events.
 
 ## Outcomes and response
 
@@ -97,7 +98,15 @@ A handled envelope has these fields:
       pid: number, createdAt: string
     }>
   }],
-  vendorEvidence: {status: "unavailable", reason: "No vendor log provider"}
+  // Registry values also include securityDescriptor: Outcome<{sddl, ownerSid, groupSid,
+  // daclPresent, daclNull, daclProtected, daclAutoInherited, aces, acesTruncated}>.
+  vendorEvidence: {schemaVersion: 1, status: "collected" | "partial" | "unavailable",
+    channels: [{name, status, code?, reason?, scanned, configuration?, events}],
+    probes: [{failureEventId, status, reason?, code?, windowStartMs?, windowEndMs?}],
+    auditPolicy, channelEnumeration, limits, attribution: "unsupported", reason?}
+  // events are allowlisted, time/path/identity-correlated records, never full messages or values.
+  // Only Security 4656 Audit Failure has operation "access_denied"; 4670 identifies the ACL actor.
+  // Read-only collection returns within 7 seconds; no records does not establish absence of interference.
 }
 ```
 

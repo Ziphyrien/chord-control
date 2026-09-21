@@ -1,63 +1,50 @@
-//! Explorer owns peer launches. No direct watchdog/desktop parent-child fallback.
-use crate::sync::{lock, Cancellation};
+//! Preserve the current token and let revocable guard sessions own peer lifetime.
+use crate::sync::Cancellation;
 use std::{
     ffi::{OsStr, OsString},
-    os::windows::ffi::OsStrExt,
-    path::Path,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc, Arc, Mutex,
-    },
-    time::{Duration, Instant},
+    os::windows::{ffi::OsStrExt, process::CommandExt},
+    process::{Command, Stdio},
+    sync::mpsc,
+    time::Duration,
 };
 use windows::{
-    core::{Interface, BSTR},
+    core::PCWSTR,
     Win32::{
-        System::{
-            Com::{
-                CoCancelCall, CoCreateInstance, CoDisableCallCancellation,
-                CoEnableCallCancellation, CoInitializeEx, CoUninitialize, IDispatch,
-                IServiceProvider, CLSCTX_LOCAL_SERVER, COINIT_APARTMENTTHREADED,
-                COINIT_DISABLE_OLE1DDE,
-            },
-            Variant::VARIANT,
+        System::Com::{
+            CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE,
         },
         UI::Shell::{
-            IShellBrowser, IShellDispatch2, IShellFolderViewDual, IShellWindows,
-            SID_STopLevelBrowser, ShellWindows, CSIDL_DESKTOP, SVGIO_BACKGROUND, SWC_DESKTOP,
-            SWFO_NEEDDISPATCH,
+            ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS,
+            SHELLEXECUTEINFOW,
         },
     },
 };
 
-static BUSY: AtomicBool = AtomicBool::new(false);
-struct WorkerSlot;
-impl Drop for WorkerSlot {
-    fn drop(&mut self) {
-        BUSY.store(false, Ordering::Release);
+pub(crate) struct Apartment;
+impl Apartment {
+    pub fn new() -> Result<Self, String> {
+        unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE).ok() }
+            .map_err(|e| e.to_string())?;
+        Ok(Self)
     }
 }
-struct CallTarget(Arc<Mutex<Option<u32>>>);
-impl Drop for CallTarget {
-    fn drop(&mut self) {
-        *lock(&self.0) = None;
-    }
-}
-struct Apartment;
 impl Drop for Apartment {
     fn drop(&mut self) {
         unsafe {
-            let _ = CoDisableCallCancellation(None);
             CoUninitialize();
         }
     }
 }
-fn bstr(value: &OsStr) -> BSTR {
-    BSTR::from_wide(&value.encode_wide().collect::<Vec<_>>())
+fn wide(value: &OsStr) -> Result<Vec<u16>, String> {
+    let mut text: Vec<_> = value.encode_wide().collect();
+    if text.contains(&0) {
+        return Err("Invalid launch argument".into());
+    }
+    text.push(0);
+    Ok(text)
 }
-
-/// CommandLineToArgvW / CRT quoting, including empty strings and trailing backslashes.
-fn parameters(args: &[OsString]) -> Vec<u16> {
+/// CRT / CommandLineToArgvW quoting; shell metacharacters are never interpreted.
+pub(crate) fn parameters(args: &[OsString]) -> Vec<u16> {
     let mut output = Vec::new();
     for (index, arg) in args.iter().enumerate() {
         if index > 0 {
@@ -84,124 +71,138 @@ fn parameters(args: &[OsString]) -> Vec<u16> {
     }
     output
 }
-fn execute(executable: &Path, args: &[OsString], cancel: &Cancellation) -> Result<(), String> {
-    unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE).ok() }
-        .map_err(|e| e.to_string())?;
-    let _apartment = Apartment;
-    unsafe { CoEnableCallCancellation(None) }.map_err(|e| e.to_string())?;
-    let check = || {
-        if cancel.is_cancelled() {
-            Err("Explorer launch cancelled".to_string())
-        } else {
-            Ok(())
-        }
-    };
-    // Use the desktop shell view, not a separately created Shell.Application instance.
-    // Each RPC boundary is followed by cancellation validation before the next call.
-    unsafe {
-        check()?;
-        let windows: IShellWindows = CoCreateInstance(&ShellWindows, None, CLSCTX_LOCAL_SERVER)
-            .map_err(|e| e.to_string())?;
-        check()?;
-        let mut hwnd = 0;
-        let desktop = windows
-            .FindWindowSW(
-                &VARIANT::from(CSIDL_DESKTOP as i32),
-                &VARIANT::default(),
-                SWC_DESKTOP,
-                &mut hwnd,
-                SWFO_NEEDDISPATCH,
-            )
-            .map_err(|e| e.to_string())?;
-        check()?;
-        let provider: IServiceProvider = desktop.cast().map_err(|e| e.to_string())?;
-        let browser: IShellBrowser = provider
-            .QueryService(&SID_STopLevelBrowser)
-            .map_err(|e| e.to_string())?;
-        check()?;
-        let view = browser.QueryActiveShellView().map_err(|e| e.to_string())?;
-        check()?;
-        let dispatch: IDispatch = view
-            .GetItemObject(SVGIO_BACKGROUND)
-            .map_err(|e| e.to_string())?;
-        let folder: IShellFolderViewDual = dispatch.cast().map_err(|e| e.to_string())?;
-        check()?;
-        let shell: IShellDispatch2 = folder
-            .Application()
-            .and_then(|v| v.cast())
-            .map_err(|e| e.to_string())?;
-        check()?;
-        shell
-            .ShellExecute(
-                &bstr(executable.as_os_str()),
-                &VARIANT::from(BSTR::from_wide(&parameters(args))),
-                &VARIANT::from(bstr(
-                    executable
-                        .parent()
-                        .ok_or("Executable has no directory")?
-                        .as_os_str(),
-                )),
-                &VARIANT::from("open"),
-                &VARIANT::from(0_i32),
-            )
-            .map_err(|e| e.to_string())
-    }
-}
-
-pub(crate) fn launch(args: Vec<OsString>, stop: &Cancellation) -> Result<(), String> {
+/// Only the initial low-integrity launch requests UAC. No credentials or policy changes.
+pub(crate) fn runas(args: Vec<OsString>, timeout: Duration) -> Result<(), String> {
+    let expected = crate::elevation::current()?;
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-    if args.iter().any(|arg| arg.encode_wide().any(|ch| ch == 0)) {
-        return Err("Invalid launch argument".into());
-    }
-    if stop.is_cancelled() {
-        return Err("Explorer launch cancelled".into());
-    }
-    if BUSY
-        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-        .is_err()
-    {
-        return Err("Previous Explorer call has not returned".into());
-    }
-    let slot = WorkerSlot;
-    let cancel = Cancellation::default();
-    let worker_cancel = cancel.clone();
-    let thread_id = Arc::new(Mutex::new(None));
-    let worker_id = thread_id.clone();
     let (send, receive) = mpsc::sync_channel(1);
     std::thread::Builder::new()
-        .name("explorer-launch".into())
+        .name("uac-launch".into())
         .spawn(move || {
-            let _slot = slot;
-            let target = CallTarget(worker_id);
-            *lock(&target.0) =
-                Some(unsafe { windows_sys::Win32::System::Threading::GetCurrentThreadId() });
-            let result = execute(&executable, &args, &worker_cancel);
-            drop(target);
+            let result = (|| {
+                let _apartment = Apartment::new()?;
+                let file = wide(executable.as_os_str())?;
+                let directory = wide(
+                    executable
+                        .parent()
+                        .ok_or("Executable directory missing")?
+                        .as_os_str(),
+                )?;
+                if args.iter().any(|v| v.encode_wide().any(|ch| ch == 0)) {
+                    return Err("Invalid launch argument".into());
+                }
+                let mut parameters = parameters(&args);
+                parameters.push(0);
+                let verb = wide(OsStr::new("runas"))?;
+                let mut info = SHELLEXECUTEINFOW {
+                    cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+                    fMask: SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI,
+                    lpVerb: PCWSTR(verb.as_ptr()),
+                    lpFile: PCWSTR(file.as_ptr()),
+                    lpParameters: PCWSTR(parameters.as_ptr()),
+                    lpDirectory: PCWSTR(directory.as_ptr()),
+                    nShow: 0,
+                    ..Default::default()
+                };
+                unsafe { ShellExecuteExW(&mut info) }.map_err(|e| e.to_string())?;
+                if info.hProcess.0.is_null() {
+                    return Err("Elevation did not return a process handle".into());
+                }
+                let handle = crate::native::process::Handle(info.hProcess.0);
+                let actual = crate::elevation::inspect(handle.0)?;
+                crate::updater::diagnostics::record(
+                    "elevation_child_token",
+                    None,
+                    serde_json::json!({"token":actual,"ownerSid":expected.sid}),
+                );
+                if actual.sid != expected.sid
+                    || !actual.high()
+                    || actual.session_id != expected.session_id
+                {
+                    return Err("提权结果不是原用户的交互式 HIGH 令牌，已拒绝启动".into());
+                }
+                Ok(())
+            })();
             let _ = send.send(result);
         })
         .map_err(|e| e.to_string())?;
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        match receive.recv_timeout(Duration::from_millis(50)) {
-            Ok(result) => return result,
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err("Explorer launch worker exited".into())
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-        }
-        if stop.is_cancelled() || Instant::now() >= deadline {
-            cancel.cancel();
-            // Keep the target locked through cancellation. The worker cannot finish
-            // and release/reuse this thread ID until it clears the same target.
-            if let Some(id) = *lock(&thread_id) {
-                unsafe {
-                    let _ = CoCancelCall(id, 0);
-                }
-            }
-            // COM cancellation is cooperative. Never join an unresponsive RPC worker;
-            // BUSY stays set until it actually exits, bounding abandoned work to one.
-            // Any late ShellExecute must still pass the peer's revocable session check.
-            return Err("Explorer launch cancelled or timed out".into());
+    // The bootstrap exits on timeout. A late child also checks its expiring attempt and SID.
+    receive
+        .recv_timeout(timeout)
+        .map_err(|_| "等待 Windows 提权超时，请手动重试".to_string())?
+}
+
+pub(crate) fn launch(mut args: Vec<OsString>, stop: &Cancellation) -> Result<(), String> {
+    if stop.is_cancelled() {
+        return Err("Peer launch cancelled".into());
+    }
+    let token = crate::elevation::current()?;
+    if !cfg!(debug_assertions) && !token.high() {
+        return Err("Guard peer requires HIGH token".into());
+    }
+    args.extend(["--startup-owner".into(), token.sid.into()]);
+    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    // Ordinary process termination does not kill a child on Windows. BREAKAWAY additionally
+    // prevents inheriting a kill-on-close job. If a restrictive job forbids it, fail visibly;
+    // never silently create a guardian whose lifetime is tied to the desktop's job.
+    Command::new(&executable)
+        .args(args)
+        .current_dir(executable.parent().ok_or("Executable directory missing")?)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(
+            windows_sys::Win32::System::Threading::CREATE_BREAKAWAY_FROM_JOB
+                | windows_sys::Win32::System::Threading::CREATE_NO_WINDOW,
+        )
+        .spawn()
+        .map_err(|e| format!("Independent HIGH peer launch failed: {e}"))?;
+    // Dropping Child does not terminate it. The target rechecks its token under the session gate.
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn arguments_round_trip_through_windows_parser() {
+        let arguments: Vec<OsString> = [
+            "app.exe",
+            "",
+            "--background",
+            "S-1-5-21-1-1001",
+            "C:\\路径 空格\\",
+            "a\\\"b",
+            "& <tag> %USER% ; $(noop)",
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let mut command = parameters(&arguments);
+        command.push(0);
+        let mut count = 0;
+        unsafe {
+            let parsed =
+                windows_sys::Win32::UI::Shell::CommandLineToArgvW(command.as_ptr(), &mut count);
+            assert!(!parsed.is_null());
+            let result: Vec<Vec<u16>> = std::slice::from_raw_parts(parsed, count as usize)
+                .iter()
+                .map(|value| {
+                    let mut length = 0;
+                    while *value.add(length) != 0 {
+                        length += 1;
+                    }
+                    std::slice::from_raw_parts(*value, length).to_vec()
+                })
+                .collect();
+            windows_sys::Win32::Foundation::LocalFree(parsed.cast());
+            assert_eq!(
+                result,
+                arguments
+                    .iter()
+                    .map(|v| v.encode_wide().collect::<Vec<_>>())
+                    .collect::<Vec<_>>()
+            );
         }
     }
 }

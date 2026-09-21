@@ -16,10 +16,12 @@ export default defineFacet({
     let platform: StudyPlatform | undefined;
     let active = false;
     let last = "";
+    let lastError: string | null = null;
     const since = new Date().toISOString();
     const status = () => ({ active, pending: [...pending.keys()], last });
     const log = (message: string) => {
       last = message;
+      lastError = message;
       void host.log(message, BACKGROUND_CONTEXT).catch(() => {});
     };
     function request(browser: Browser): boolean {
@@ -50,13 +52,12 @@ export default defineFacet({
       await platform?.dispose();
     });
     env.onActivate(async () => {
-      const paths = await host.paths(BACKGROUND_CONTEXT);
-      platform = createPlatform(host, paths.dataDir, log);
+      platform = createPlatform(host, log);
       try {
         await platform.start((browser) => {
           request(browser);
         });
-        active = true;
+        active = !lifetime.signal.aborted;
       } catch (error) {
         active = false;
         throw error;
@@ -64,22 +65,13 @@ export default defineFacet({
     });
     env.provide(PluginDiagnostics, {
       async snapshot() {
-        if (!platform) throw new Error("学习权限尚未启动");
-        const result = await platform.measure();
+        if (!platform) throw new Error("浏览器保护尚未启动");
         return {
           since,
           observedAt: new Date().toISOString(),
-          lastError: result.errors.join("; ") || null,
+          lastError,
           metrics: [
-            { name: "policy.checks", kind: "gauge", value: result.checks, unit: "count" },
-            { name: "policy.passed", kind: "gauge", value: result.passed, unit: "count" },
-            {
-              name: "policy.complianceRatio",
-              kind: "gauge",
-              value: result.checks ? result.passed / result.checks : null,
-              unit: "ratio",
-            },
-            { name: "policy.owned", kind: "gauge", value: result.owned ? 1 : 0, unit: "boolean" },
+            { name: "browser.monitoring", kind: "gauge", value: active ? 1 : 0, unit: "boolean" },
             { name: "authorization.pending", kind: "gauge", value: pending.size, unit: "count" },
           ],
         };
@@ -92,7 +84,7 @@ export default defineFacet({
           const requested = request(input);
           return { ...status(), requested };
         }
-        throw new Error("未知的学习权限操作");
+        throw new Error("未知的浏览器保护操作");
       },
     });
   },

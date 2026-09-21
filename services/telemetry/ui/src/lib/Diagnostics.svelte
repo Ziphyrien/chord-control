@@ -71,5 +71,64 @@
     rows={view.registry}
     empty={view.registryEmpty}
   />
+  <h4>权限内容</h4>
+  <DataTable
+    id="registry-security"
+    headers={[
+      "事件 ID",
+      "检查路径",
+      "读取结果",
+      "所有者",
+      "所属组",
+      "阻止继承",
+      "自动继承",
+      "权限描述符",
+    ]}
+    rows={view.security}
+    empty={view.securityEmpty}
+  />
+  <p class="muted">{view.aceLimit}</p>
+  <DataTable
+    id="registry-aces"
+    headers={["事件 ID", "用户或组", "规则", "权限", "继承所得", "仅用于继承"]}
+    rows={view.aces}
+    empty="当前报告没有可显示的权限条目。"
+  />
+  <h4>来源证据</h4>
   <p id="vendor-evidence" class="muted">{view.vendor}</p>
+  <DataTable
+    id="registry-attribution"
+    headers={["事件 ID", "当前权限", "访问失败审计", "关联权限修改记录"]}
+    rows={view.attribution}
+    empty={view.evidenceEmpty}
+  />
+  <DataTable
+    id="evidence-summary"
+    headers={["项目", "结果"]}
+    rows={view.sourceSummary}
+    empty={view.evidenceEmpty}
+  />
+  <DataTable
+    id="evidence-channels"
+    headers={["日志通道", "读取状态", "检查记录数", "原因"]}
+    rows={view.evidenceChannels}
+    empty={view.evidenceEmpty}
+  />
+  <DataTable
+    id="evidence-events"
+    headers={[
+      "关联事件",
+      "记录时间",
+      "通道",
+      "提供方 / 事件 / 记录号",
+      "操作",
+      "目标",
+      "记录中的进程",
+      "操作账户",
+      "关联依据",
+      "时间差（毫秒）",
+    ]}
+    rows={view.evidenceEvents}
+    empty={view.evidenceEmpty}
+  />
 </section>

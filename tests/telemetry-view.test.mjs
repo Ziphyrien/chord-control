@@ -396,6 +396,99 @@ test("failure and recheck tables are bounded to 16 with totals and nullable orig
   assert.match(diagnosticView(host).failureEmpty, /此统计周期暂无/);
 });
 
+test("registry source evidence distinguishes current ACLs, changed permissions, and unavailable audit channels", () => {
+  const host = reportHost();
+  host.windows.value.registry = [check("event-1", false)];
+  host.windows.value.registry[0].value.securityDescriptor = {
+    ok: true,
+    value: {
+      ownerSid: "S-1-5-18",
+      groupSid: "S-1-5-32-544",
+      sddl: "O:SYG:BAD:(A;;KA;;;BA)",
+      daclProtected: true,
+      daclAutoInherited: false,
+      aces: [
+        {
+          type: 0,
+          flags: 0,
+          mask: 0xf003f,
+          sid: "S-1-5-32-544",
+          inherited: false,
+          inheritOnly: false,
+        },
+        { type: 1, flags: 16, mask: 4, sid: "S-1-5-11", inherited: true, inheritOnly: false },
+      ],
+      acesTruncated: false,
+    },
+  };
+  host.windows.value.vendorEvidence = {
+    schemaVersion: 1,
+    status: "partial",
+    channels: [
+      {
+        name: "Security",
+        status: "unavailable",
+        code: 5,
+        reason: "Access denied",
+        scanned: 0,
+        events: [],
+      },
+      {
+        name: "360 Protection",
+        status: "collected",
+        scanned: 2,
+        events: [
+          {
+            provider: "360",
+            eventId: 100,
+            recordId: "1",
+            timeMs: observedAtMs,
+            correlation: { failureEventId: "event-1", basis: "path/time", timeDeltaMs: 0 },
+          },
+        ],
+      },
+    ],
+    probes: [
+      {
+        failureEventId: "event-1",
+        status: "ready",
+        windowStartMs: observedAtMs - 120000,
+        windowEndMs: observedAtMs + 120000,
+      },
+    ],
+    auditPolicy: { ok: true, value: { registryFailure: false, registrySuccess: true } },
+  };
+  let view = diagnosticView(host);
+  assert.equal(view.security[0][3], "SYSTEM");
+  assert.equal(view.aces[0][1], "Administrators");
+  assert.match(view.aces[0][3], /创建子键/);
+  assert.equal(view.aces[1][2], "拒绝");
+  assert.equal(view.attribution[0][1], "采样时 Windows 权限检查拒绝");
+  assert.equal(view.attribution[0][3], "权限设置者未确定");
+  assert.match(view.evidenceChannels[0][3], /Access denied.*5/);
+  assert.equal(view.sourceSummary.find((row) => row[0] === "注册表失败审计")[1], "否");
+  assert.doesNotMatch(JSON.stringify(view.attribution), /360.*拦截|360.*拒绝/);
+  host.windows.value.vendorEvidence.channels.push({
+    name: "Security",
+    status: "collected",
+    scanned: 1,
+    events: [
+      {
+        provider: "Microsoft-Windows-Security-Auditing",
+        eventId: 4670,
+        recordId: "15",
+        timeMs: observedAtMs - 1000,
+        processName: "C:\\Windows\\System32\\reg.exe",
+        subjectSid: "S-1-5-18",
+        correlation: { failureEventId: "event-1", basis: "target/time", timeDeltaMs: -1000 },
+      },
+    ],
+  });
+  view = diagnosticView(host);
+  assert.match(view.attribution[0][3], /reg\.exe.*SYSTEM/);
+  assert.equal(view.attribution[0][2], "尚无关联访问失败审计");
+});
+
 test(
   "dashboard browser flow renders untrusted evidence as text and clears it when opening an old report",
   { timeout: 45000 },
@@ -409,6 +502,30 @@ test(
     host.windows.value.uac.EnableLUA = { ok: false, error: attack, stage: "read", code: 5 };
     host.windows.value.processes[0].value.executable = attack;
     host.windows.value.registry = [check("event-1", true)];
+    host.windows.value.registry[0].value.securityDescriptor = {
+      ok: true,
+      value: { sddl: attack, ownerSid: attack, aces: [] },
+    };
+    host.windows.value.vendorEvidence = {
+      schemaVersion: 1,
+      status: "collected",
+      channels: [
+        {
+          name: attack,
+          status: "collected",
+          scanned: 1,
+          events: [
+            {
+              provider: attack,
+              eventId: 4670,
+              objectName: attack,
+              processName: attack,
+              correlation: { failureEventId: "event-1", basis: attack },
+            },
+          ],
+        },
+      ],
+    };
     const device = (id, host) => ({
       id,
       trusted: true,
@@ -455,6 +572,8 @@ test(
       assert((await page.locator("#native-failures").textContent()).includes(attack));
       assert((await page.locator("#uac").textContent()).includes(attack));
       assert((await page.locator("#process-tokens").textContent()).includes(attack));
+      assert((await page.locator("#registry-security").textContent()).includes(attack));
+      assert((await page.locator("#evidence-events").textContent()).includes(attack));
       assert.equal(await page.locator(".diagnostics img, .diagnostics script").count(), 0);
       assert.equal(await page.evaluate(() => window.injected), undefined);
       assert.match(

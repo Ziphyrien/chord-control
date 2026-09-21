@@ -1,19 +1,16 @@
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import type { Json } from "../../../shared/protocol.ts";
-import { jsonValue, message, object } from "../../../shared/validation.ts";
+import { message, object } from "../../../shared/validation.ts";
+import {
+  NativeWindowsResponseError,
+  projectWindowsResponse,
+  type WindowsObservationRequest,
+} from "./windows-response.ts";
 
-type ProcessProbe = { role: string; pid: number; createdAt?: string };
-type RegistryProbe = {
-  eventId: string;
-  pid: number;
-  createdAt: string;
-  path: string;
-  name: string;
-  desiredAccess: number;
-  allowParent: boolean;
-};
-type Request = { format: 1; processes: ProcessProbe[]; registry: RegistryProbe[] };
+type Request = WindowsObservationRequest;
+type ProcessProbe = Request["processes"][number];
+type RegistryProbe = Request["registry"][number];
 const validPid = (pid: unknown): pid is number =>
   typeof pid === "number" && Number.isInteger(pid) && pid > 0 && pid <= 0xffffffff;
 const validBirth = (birth: unknown): birth is string =>
@@ -69,52 +66,15 @@ export function observationRequest(host: Json): Request {
       name: target.name,
       desiredAccess: event.desiredAccess,
       allowParent: event.api === "RegCreateKeyExW",
+      ...(typeof event.observedAtMs === "number" &&
+      Number.isSafeInteger(event.observedAtMs) &&
+      event.observedAtMs >= 0
+        ? { observedAtMs: event.observedAtMs }
+        : {}),
     });
     if (registry.length === 8) break;
   }
   return { format: 1, processes, registry };
-}
-
-function validateResult(value: unknown, request: Request): value is Json {
-  if (
-    !object(value) ||
-    value.format !== 1 ||
-    !jsonValue(value) ||
-    typeof value.observedAtMs !== "number" ||
-    !Number.isSafeInteger(value.observedAtMs) ||
-    !object(value.uac) ||
-    !Array.isArray(value.processes) ||
-    !Array.isArray(value.registry) ||
-    value.processes.length !== request.processes.length ||
-    value.registry.length !== request.registry.length ||
-    !object(value.vendorEvidence)
-  )
-    return false;
-  const outcome = (item: unknown) =>
-    object(item) &&
-    (item.ok === true
-      ? Object.hasOwn(item, "value")
-      : item.ok === false && typeof item.error === "string");
-  const uac = value.uac;
-  return (
-    [
-      "EnableLUA",
-      "FilterAdministratorToken",
-      "ConsentPromptBehaviorAdmin",
-      "PromptOnSecureDesktop",
-    ].every((key) => outcome(uac[key])) &&
-    value.processes.every(
-      (item, index) =>
-        outcome(item) &&
-        object(item) &&
-        item.pid === request.processes[index].pid &&
-        item.role === request.processes[index].role,
-    ) &&
-    value.registry.every(
-      (item, index) =>
-        outcome(item) && object(item) && item.eventId === request.registry[index].eventId,
-    )
-  );
 }
 
 /** Child process has no shell, bounded output, deadline and cancellation tied to plugin disposal. */
@@ -151,12 +111,11 @@ export async function collectWindows(
     });
     stage = "protocol";
     const value: unknown = JSON.parse(output);
-    if (!validateResult(value, request)) throw new Error("Windows 采集器返回无效报告");
-    return { ok: true, value };
+    return { ok: true, value: projectWindowsResponse(value, request) };
   } catch (error) {
     return {
       ok: false,
-      stage,
+      stage: error instanceof NativeWindowsResponseError ? error.stage : stage,
       error: message(error).slice(0, 1000),
       code:
         object(error) && (typeof error.code === "string" || typeof error.code === "number")

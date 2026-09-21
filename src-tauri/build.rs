@@ -36,5 +36,13 @@ fn main() {
         config["bundle"]["windows"]["nsis"]["template"],
         "windows/installer.nsi"
     );
-    tauri_build::build();
+    tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
+        tauri_build::AppManifest::new().commands(&[
+            "controller_command",
+            "open_data_directory",
+            "startup_is_enabled",
+            "startup_set_enabled",
+        ]),
+    ))
+    .expect("Desktop build failed");
 }

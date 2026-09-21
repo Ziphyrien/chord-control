@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import type { DesktopAdapter } from "./desktop.ts";
 import type { ControllerTransport } from "./controller.ts";
 import { decodeControllerEvent } from "./events.ts";
@@ -29,11 +28,8 @@ export function createNativeTransport(): ControllerTransport {
 export function createDesktopAdapter(): DesktopAdapter {
   return {
     available: true,
-    autostart: isEnabled,
-    async setAutostart(enabled) {
-      await (enabled ? enable() : disable());
-      return isEnabled();
-    },
+    autostart: () => invoke<boolean>("startup_is_enabled"),
+    setAutostart: (enabled) => invoke<boolean>("startup_set_enabled", { enabled }),
     async openDataDirectory() {
       await invoke("open_data_directory");
     },

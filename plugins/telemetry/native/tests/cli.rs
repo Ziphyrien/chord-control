@@ -60,6 +60,58 @@ fn executable_reads_known_parent_and_preserves_registry_and_process_siblings() {
     assert_eq!(result["registry"][1]["value"]["checkedAccess"], 4);
     assert_eq!(result["registry"][1]["value"]["requestedAccess"], 2);
     assert_eq!(result["registry"][2]["code"], 2);
+    let descriptor = &result["registry"][0]["value"]["securityDescriptor"];
+    assert_eq!(descriptor["ok"], true, "{result}");
+    assert!(
+        descriptor["value"]["ownerSid"]
+            .as_str()
+            .unwrap()
+            .starts_with("S-1-")
+    );
+    assert!(descriptor["value"]["sddl"].as_str().unwrap().contains("D:"));
+    assert_eq!(result["vendorEvidence"]["schemaVersion"], 1);
+    assert_eq!(
+        result["vendorEvidence"]["probes"][0]["status"],
+        "unavailable"
+    );
+    assert!(
+        result["vendorEvidence"]["probes"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("observedAtMs absent")
+    );
+
+    let observed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let evidence = run(&serde_json::to_vec(&json!({"format":1,"processes":[],"registry":[
+        {"eventId":"timed","pid":pid,"createdAt":birth,"path":"Software","name":"","desiredAccess":1,"allowParent":false,"observedAtMs":observed}
+    ]})).unwrap(),0);
+    assert_eq!(
+        evidence["vendorEvidence"]["probes"][0]["status"], "ready",
+        "{evidence}"
+    );
+    let channels = evidence["vendorEvidence"]["channels"].as_array().unwrap();
+    assert!(
+        channels.iter().any(|c| c["name"] == "Security"),
+        "{evidence}"
+    );
+    assert!(channels.len() <= 8);
+    assert!(
+        channels
+            .iter()
+            .map(|c| c["events"].as_array().unwrap().len())
+            .sum::<usize>()
+            <= 16
+    );
+    for channel in channels {
+        assert!(channel["scanned"].as_u64().unwrap() <= 128);
+        assert_ne!(channel["code"], 15001, "Invalid Event Log XPath: {channel}");
+        if channel["code"] == 5 {
+            assert_ne!(channel["status"], "collected");
+        }
+    }
 }
 
 #[test]

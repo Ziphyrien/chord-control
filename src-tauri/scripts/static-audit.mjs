@@ -32,7 +32,7 @@ assert(rootPackage, "root package missing");
 if (process.argv.includes("--sync-lock")) {
   const dependencies = [...expected]
     .map(([name, spec]) => {
-      const version = typeof spec === "string" ? spec : spec.version;
+      const version = (typeof spec === "string" ? spec : spec.version).replace(/^~/, "");
       const matches = candidates(name).filter(
         (pkg) => pkg.version === version || pkg.version.startsWith(`${version}.`),
       );
@@ -99,7 +99,7 @@ assert.equal(capability.local, true);
 assert(!capability.remote);
 assert(
   capability.permissions.every((permission) =>
-    /^(core:event:allow-(listen|unlisten)|autostart:allow-(enable|disable|is-enabled))$/.test(
+    /^(core:event:allow-(listen|unlisten)|allow-(controller-command|open-data-directory|startup-is-enabled|startup-set-enabled))$/.test(
       permission,
     ),
   ),
@@ -197,11 +197,18 @@ for (const name of [
   "plugin_window",
 ])
   assert(rust.includes(`"${name}"`));
-for (const command of ["controller::controller_command", "desktop::open_data_directory"])
+for (const command of [
+  "controller::controller_command",
+  "desktop::open_data_directory",
+  "startup::startup_is_enabled",
+  "startup::startup_set_enabled",
+])
   assert(read("src/lib.rs").includes(command), `unregistered ${command}`);
 for (const module of [
   "controller",
   "desktop",
+  "elevation",
+  "startup",
   "guard",
   "lifecycle",
   "logging",
@@ -216,8 +223,29 @@ for (const module of [
   assert(read("src/lib.rs").includes(`mod ${module};`));
 assert(read("src/controller.rs").includes("generation == generation && !c.force.is_cancelled()"));
 assert(read("src/controller/transport.rs").includes("CancelSynchronousIo"));
-assert(read("src/shell_launch.rs").includes("CoCancelCall"));
-assert(read("src/shell_launch.rs").includes("QueryActiveShellView"));
+assert(read("src/shell_launch.rs").includes("CREATE_BREAKAWAY_FROM_JOB"));
+assert(read("src/shell_launch.rs").includes("ShellExecuteExW"));
+assert(!rust.includes("tauri_plugin_autostart"));
+assert(read("src/startup/task.rs").includes("TASK_LOGON_INTERACTIVE_TOKEN"));
+assert(read("src/startup/task.rs").includes("DeleteTask"));
+assert(read("src/startup/policy.rs").includes("<RunLevel>HighestAvailable</RunLevel>"));
+for (const command of [
+  "controller_command",
+  "open_data_directory",
+  "startup_is_enabled",
+  "startup_set_enabled",
+]) {
+  assert(read("build.rs").includes(`"${command}"`), `missing ACL generation ${command}`);
+  assert(
+    capability.permissions.includes(`allow-${command.replaceAll("_", "-")}`),
+    `missing command permission ${command}`,
+  );
+}
+for (const command of ["startup_is_enabled", "startup_set_enabled"])
+  assert(
+    read("../src/lib/native.ts").includes(`"${command}"`),
+    `missing frontend command ${command}`,
+  );
 assert(read("src/guard/session.rs").includes("Guard resume token was revoked"));
 assert(read("src/native/process.rs").includes('"createdAt":created_at'));
 const installer = read("windows/installer.nsi");

@@ -1,5 +1,8 @@
 //! Entry routing and ownership of a revocable desktop/watchdog pair.
 #[cfg(windows)]
+#[path = "guard/options.rs"]
+mod options;
+#[cfg(windows)]
 #[path = "guard/windows.rs"]
 mod platform;
 #[cfg(windows)]

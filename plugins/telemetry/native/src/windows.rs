@@ -424,6 +424,120 @@ fn security_descriptor(key: &Key) -> Probe<LocalAllocation> {
     Ok(LocalAllocation(descriptor))
 }
 
+fn sid_text(sid: PSID) -> Probe<String> {
+    if sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
+        return Err(invalid_data(
+            "registry.securityDescriptor",
+            "Missing or invalid SID",
+        ));
+    }
+    let mut text = null_mut();
+    if unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0 {
+        return Err(last_error("registry.securityDescriptor"));
+    }
+    let _allocation = LocalAllocation(text.cast());
+    let mut length = 0;
+    while length < 256 && unsafe { *text.add(length) } != 0 {
+        length += 1;
+    }
+    if length == 256 {
+        return Err(invalid_data(
+            "registry.securityDescriptor",
+            "SID exceeds limit",
+        ));
+    }
+    String::from_utf16(unsafe { std::slice::from_raw_parts(text, length) })
+        .map_err(|_| invalid_data("registry.securityDescriptor", "Invalid SID encoding"))
+}
+
+fn descriptor_summary(descriptor: &LocalAllocation) -> Probe<Value> {
+    let stage = "registry.securityDescriptor";
+    let (mut text, mut length) = (null_mut(), 0);
+    if unsafe {
+        ConvertSecurityDescriptorToStringSecurityDescriptorW(
+            descriptor.0,
+            1,
+            OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+            &mut text,
+            &mut length,
+        )
+    } == 0
+    {
+        return Err(last_error(stage));
+    }
+    let _allocation = LocalAllocation(text.cast());
+    if length == 0 || length > 4097 {
+        return Err(Failure::new(122, stage, "SDDL exceeds 4096 units"));
+    }
+    let sddl = String::from_utf16(unsafe { std::slice::from_raw_parts(text, length as usize - 1) })
+        .map_err(|_| invalid_data(stage, "Invalid SDDL encoding"))?;
+    if sddl.len() > 4096 {
+        return Err(Failure::new(122, stage, "SDDL exceeds 4096 bytes"));
+    }
+    let (mut owner, mut group, mut defaulted) = (null_mut(), null_mut(), 0);
+    let (mut control, mut revision) = (0, 0);
+    let (mut present, mut acl) = (0, null_mut());
+    if unsafe { GetSecurityDescriptorOwner(descriptor.0, &mut owner, &mut defaulted) } == 0
+        || unsafe { GetSecurityDescriptorGroup(descriptor.0, &mut group, &mut defaulted) } == 0
+        || unsafe { GetSecurityDescriptorControl(descriptor.0, &mut control, &mut revision) } == 0
+        || unsafe {
+            GetSecurityDescriptorDacl(descriptor.0, &mut present, &mut acl, &mut defaulted)
+        } == 0
+    {
+        return Err(last_error(stage));
+    }
+    if present != 0 && !acl.is_null() && unsafe { IsValidAcl(acl) } == 0 {
+        return Err(invalid_data(stage, "Invalid DACL"));
+    }
+    let mut aces = Vec::new();
+    let count = if present != 0 && !acl.is_null() {
+        unsafe { (*acl).AceCount }
+    } else {
+        0
+    };
+    for index in 0..count.min(32) {
+        let mut raw = null_mut();
+        if unsafe { GetAce(acl, index as u32, &mut raw) } == 0 {
+            return Err(last_error(stage));
+        }
+        if raw.is_null() {
+            return Err(invalid_data(stage, "Missing ACE"));
+        }
+        let header = unsafe { raw.cast::<ACE_HEADER>().read_unaligned() };
+        let mut ace = json!({"type":header.AceType,"flags":header.AceFlags,
+            "inherited":header.AceFlags & 0x10 != 0,"inheritOnly":header.AceFlags & 0x08 != 0});
+        // Only simple allow/deny ACEs have this layout. Other types retain their raw type/flags.
+        if matches!(header.AceType, 0 | 1) && header.AceSize as usize >= 16 {
+            let basic = unsafe { raw.cast::<ACCESS_ALLOWED_ACE>().read_unaligned() };
+            let sid_bytes = unsafe { raw.cast::<u8>().add(8) };
+            let subauthorities = unsafe { *sid_bytes.add(1) } as usize;
+            if 16 + subauthorities * 4 > header.AceSize as usize {
+                return Err(invalid_data(stage, "Truncated ACE SID"));
+            }
+            let sid = sid_bytes.cast();
+            ace["mask"] = json!(basic.Mask);
+            ace["sid"] = json!(sid_text(sid)?);
+        }
+        aces.push(ace);
+    }
+    Ok(
+        json!({"sddl":sddl,"ownerSid":sid_text(owner)?,"groupSid":sid_text(group)?,
+        "daclPresent":present != 0,"daclNull":present != 0 && acl.is_null(),
+        "daclProtected":control & SE_DACL_PROTECTED != 0,
+        "daclAutoInherited":control & SE_DACL_AUTO_INHERITED != 0,
+        "aces":aces,"acesTruncated":count > 32}),
+    )
+}
+
+pub(crate) fn evidence_identity(request: &RegistryRequest) -> Probe<(String, String, u64)> {
+    let process = Process::open(request.pid, Some(&request.created_at))?;
+    Ok((
+        user_sid(&process.token(false)?)?,
+        process.executable()?,
+        process.created_at,
+    ))
+}
+
 fn access_check(descriptor: &LocalAllocation, token: &Handle, desired: u32) -> Probe<(bool, u32)> {
     let mapping = GENERIC_MAPPING {
         GenericRead: KEY_READ,
@@ -519,6 +633,7 @@ pub fn registry(request: &RegistryRequest) -> Probe<Value> {
         "requestedAccess": request.desired_access, "checkedAccess": checked_access,
         "checkedPath": checked_path, "ancestorUsed": ancestor,
         "daclAllowed": allowed, "grantedAccess": granted,
+        "securityDescriptor": outcome(descriptor_summary(&descriptor)),
         "pid": process.pid, "createdAt": process.created_at.to_string(),
     }))
 }
@@ -580,10 +695,45 @@ mod tests {
                 0
             );
             let descriptor = LocalAllocation(descriptor);
+            let summary = descriptor_summary(&descriptor).unwrap();
+            assert_eq!(summary["ownerSid"], sid);
+            assert_eq!(summary["groupSid"], sid);
+            assert_eq!(summary["daclPresent"], true);
+            assert_eq!(summary["daclNull"], false);
+            assert_eq!(summary["aces"][0]["mask"], KEY_SET_VALUE);
+            assert_eq!(summary["aces"][0]["type"], if expected { 0 } else { 1 });
+            assert_eq!(summary["aces"][0]["inherited"], false);
+            assert_eq!(summary["aces"][0]["sid"], sid);
             let (allowed, granted) = access_check(&descriptor, &token, KEY_SET_VALUE).unwrap();
             assert_eq!(allowed, expected);
             assert_eq!(granted, if expected { KEY_SET_VALUE } else { 0 });
         }
+    }
+
+    #[test]
+    fn descriptor_preserves_owner_protection_and_inherit_only_flags() {
+        let text = wide("O:SYG:BAD:PAI(A;CIID;0x4;;;BU)(D;CIIO;0x2;;;WD)");
+        let mut raw = null_mut();
+        assert_ne!(
+            unsafe {
+                ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    text.as_ptr(),
+                    1,
+                    &mut raw,
+                    null_mut(),
+                )
+            },
+            0
+        );
+        let summary = descriptor_summary(&LocalAllocation(raw)).unwrap();
+        assert_eq!(summary["ownerSid"], "S-1-5-18");
+        assert_eq!(summary["groupSid"], "S-1-5-32-544");
+        assert_eq!(summary["daclProtected"], true);
+        assert_eq!(summary["daclAutoInherited"], true);
+        assert_eq!(summary["aces"][0]["inherited"], true);
+        assert_eq!(summary["aces"][0]["inheritOnly"], false);
+        assert_eq!(summary["aces"][1]["inheritOnly"], true);
+        assert_eq!(summary["aces"][1]["mask"], KEY_SET_VALUE);
     }
 
     #[test]
@@ -642,6 +792,7 @@ mod tests {
             name: "".into(),
             desired_access: KEY_QUERY_VALUE,
             allow_parent: false,
+            observed_at_ms: None,
         };
         let result = registry(&request).unwrap();
         assert_eq!(

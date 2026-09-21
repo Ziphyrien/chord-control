@@ -48,10 +48,11 @@ jobs:
       - name: Test installer diagnostics (NSIS executable)
         shell: cmd
         run: node scripts/test-installer-diagnostics.mjs
-      - name: Test generic native failure facts
-        run: cargo test --release --manifest-path src-tauri/Cargo.toml --lib native::failures::tests
-      - name: Test native update routing
-        run: cargo test --release --manifest-path src-tauri/Cargo.toml --lib updater::network::tests
+      - name: Test Windows startup, failure facts and update routing
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml --lib
+      - name: Verify current-user highest startup task
+        shell: cmd
+        run: node scripts/test-startup-task.mjs
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: chord-control-windows-x64

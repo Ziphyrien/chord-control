@@ -1,6 +1,8 @@
 //! Desktop composition root. All plugin-specific behavior belongs to the sidecar/plugins.
 mod controller;
 mod desktop;
+#[cfg(windows)]
+mod elevation;
 mod guard;
 mod kernel;
 mod lifecycle;
@@ -9,6 +11,7 @@ mod native;
 mod plugin_windows;
 #[cfg(windows)]
 mod shell_launch;
+mod startup;
 mod sync;
 mod tray;
 mod updater;
@@ -18,6 +21,12 @@ use tauri::{Manager, WindowEvent};
 /// CLI roles return before creating windows or entering single-instance handling.
 /// Startup failures are returned to the executable so they cannot bypass guard cleanup.
 pub fn run() -> Result<(), String> {
+    // Reject alternate UAC credentials before any data directory or session side effects.
+    #[cfg(windows)]
+    elevation::validate_identity()?;
+    if startup::handle_cli()? {
+        return Ok(());
+    }
     if guard::handle_cli().inspect_err(|error| {
         updater::diagnostics::record("cli_failed", None, serde_json::json!({"error": error}));
     })? {
@@ -27,12 +36,6 @@ pub fn run() -> Result<(), String> {
     let app = tauri::Builder::default()
         // A second launch cannot unlock/show the existing main window or invoke a hook.
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
-        .plugin(
-            tauri_plugin_autostart::Builder::new()
-                .app_name("Chord Control")
-                .args(["--background"])
-                .build(),
-        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(controller::ControllerState::default())
@@ -44,7 +47,9 @@ pub fn run() -> Result<(), String> {
         .manage(updater::UpdateState::default())
         .invoke_handler(tauri::generate_handler![
             controller::controller_command,
-            desktop::open_data_directory
+            desktop::open_data_directory,
+            startup::startup_is_enabled,
+            startup::startup_set_enabled
         ])
         .setup(|app| {
             // Resume validation must precede autostart, updater and controller side effects.

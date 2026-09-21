@@ -1,6 +1,6 @@
 {
   "name": "chord-control",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "private": true,
   "description": "Windows control center for Chord plugins",
   "workspaces": [
@@ -48,7 +48,6 @@
     "@chord-control/ui": "workspace:*",
     "@earendil-works/chord": "0.86.1",
     "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-autostart": "^2.5.1",
     "fflate": "^0.8.3",
     "svelte": "^5.57.0"
   },

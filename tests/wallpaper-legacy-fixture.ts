@@ -1,9 +1,11 @@
+// Frozen pre-split policy algorithm (study-guard 1.2.3). Kept only to exercise
+// cross-version leases, rollback and dispose against the migrated plugin.
 import { stat, rm } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { HostService } from "../../../sdk/index.ts";
-import type { Json } from "../../../shared/protocol.ts";
+import type { HostService } from "../sdk/index.ts";
+import type { Json } from "../shared/protocol.ts";
 import {
   POLICY_KEYS,
   parseRaw,
@@ -11,7 +13,7 @@ import {
   sameValue,
   type PolicyEntry,
   type RawValue,
-} from "./registry.ts";
+} from "../plugins/wallpaper-policy/src/registry.ts";
 import {
   atomicText,
   optionalText,
@@ -19,7 +21,7 @@ import {
   removeRetiredImage,
   withJournalLock,
   type Backup,
-} from "./journal.ts";
+} from "../plugins/wallpaper-policy/src/journal.ts";
 
 async function stockWallpaper(root: string | undefined): Promise<string> {
   if (!root || !isAbsolute(root)) throw new Error("无法定位 Windows 系统目录");

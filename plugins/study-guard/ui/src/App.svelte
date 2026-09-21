@@ -41,7 +41,7 @@
           ? "请在密保盘中验证"
           : pending.length
             ? "正在等待密保盘验证"
-            : value.last || (enabled ? "学习保护已启用" : "学习保护未启用");
+            : value.last || (enabled ? "浏览器保护已启用" : "浏览器保护未启用");
     } catch (cause) {
       if (active) {
         error = message(cause);
@@ -69,8 +69,8 @@
 </script>
 
 <Page
-  title="专注学习"
-  description="打开浏览器前，请通过密保盘验证。保护启用时，桌面使用 Windows 默认壁纸并锁定背景设置。"
+  title="浏览器保护"
+  description="打开新的浏览器窗口前，请通过密保盘验证。已打开的浏览器可以继续使用。"
 >
   <div class="browsers" role="group" aria-label="打开浏览器">
     {#each browsers as browser (browser.id)}

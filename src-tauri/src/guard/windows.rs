@@ -1,8 +1,9 @@
-use super::session::{Gate, Run};
+use super::{
+    options::Options,
+    session::{Gate, Run},
+};
 use crate::sync::{lock, Cancellation, RestartBudget};
 use std::{
-    ffi::OsString,
-    path::PathBuf,
     sync::{mpsc, Mutex},
     time::{Duration, Instant},
 };
@@ -16,75 +17,6 @@ struct Session {
 static SESSION: Mutex<Option<Session>> = Mutex::new(None);
 const TICK: Duration = Duration::from_millis(100);
 
-struct Options {
-    dir: PathBuf,
-    watchdog: Option<String>,
-    resume: Option<String>,
-    maintenance: bool,
-}
-impl Options {
-    fn read() -> Result<Self, String> {
-        let args: Vec<OsString> = std::env::args_os().skip(1).collect();
-        let mut dir = std::env::var_os("CHORD_CONTROL_GUARD_DIR")
-            .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("LOCALAPPDATA")
-                    .map(|v| PathBuf::from(v).join("ChordControl/guard"))
-            })
-            .ok_or("LOCALAPPDATA unavailable")?;
-        let mut watchdog = None;
-        let mut resume = None;
-        let mut maintenance = false;
-        let mut index = 0;
-        while index < args.len() {
-            let arg = &args[index];
-            if arg == "--maintenance-stop" {
-                maintenance = true;
-            } else if arg == "--guard-directory" {
-                index += 1;
-                dir = PathBuf::from(args.get(index).ok_or("Missing guard directory")?);
-            } else if arg == "--watchdog" || arg == "--guard-resume" {
-                index += 1;
-                let token = args
-                    .get(index)
-                    .and_then(|v| v.to_str())
-                    .ok_or("Missing guard token")?;
-                if token.is_empty() || token.len() > 128 || token.starts_with("--") {
-                    return Err("Invalid guard token".into());
-                }
-                let slot = if arg == "--watchdog" {
-                    &mut watchdog
-                } else {
-                    &mut resume
-                };
-                if slot.replace(token.to_owned()).is_some() {
-                    return Err("Duplicate guard mode".into());
-                }
-            }
-            index += 1;
-        }
-        if usize::from(maintenance)
-            + usize::from(watchdog.is_some())
-            + usize::from(resume.is_some())
-            > 1
-        {
-            return Err("Conflicting guard modes".into());
-        }
-        if !dir.is_absolute() {
-            return Err("Guard directory must be absolute".into());
-        }
-        // Canonicalize existing directories so aliases address the same cross-process gate.
-        if dir.exists() {
-            dir = std::fs::canonicalize(dir).map_err(|e| e.to_string())?;
-        }
-        Ok(Self {
-            dir,
-            watchdog,
-            resume,
-            maintenance,
-        })
-    }
-}
 fn wait(run: &Run, cancel: &Cancellation, duration: Duration) -> bool {
     let deadline = Instant::now() + duration;
     loop {
@@ -125,7 +57,9 @@ fn launch_peer(run: &Run, role: &str, cancel: &Cancellation) -> Result<(), Strin
             return Ok(());
         }
         if Instant::now() >= deadline {
-            return Err(format!("{role} did not acknowledge Explorer launch"));
+            return Err(format!(
+                "{role} did not acknowledge independent HIGH launch"
+            ));
         }
     }
     Ok(())
@@ -180,6 +114,23 @@ pub(super) fn handle_cli() -> Result<bool, String> {
             }
             std::thread::sleep(TICK);
         }
+        if options.uninstall {
+            crate::startup::remove()?;
+        }
+        return Ok(true);
+    }
+    // Validate every resumable role before UAC, Tauri, or creation of a fresh session.
+    if let Some(token) = options.watchdog.as_ref().or(options.resume.as_ref()) {
+        if !(Run {
+            dir: options.dir.clone(),
+            token: token.clone(),
+        })
+        .active()
+        {
+            return Ok(true);
+        }
+    }
+    if crate::elevation::bootstrap()? {
         return Ok(true);
     }
     if let Some(token) = options.watchdog {

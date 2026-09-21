@@ -1,14 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
-  "description": "Local main window: controller events and the existing per-user login setting. Plugin webviews receive no native permissions.",
+  "description": "Local main window: controller events and current-user highest login task. Mutations additionally require the unlocked main window. Plugin webviews receive no native permissions.",
   "local": true,
   "windows": ["main"],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",
-    "autostart:allow-is-enabled",
-    "autostart:allow-enable",
-    "autostart:allow-disable"
+    "allow-controller-command",
+    "allow-open-data-directory",
+    "allow-startup-is-enabled",
+    "allow-startup-set-enabled"
   ]
 }
