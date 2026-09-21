@@ -12,6 +12,7 @@
         "shared/**/*.ts",
         "scripts/{build-controller,build-sidecar,build-plugins,prepare-app-release,publish-app,publish-plugins,generate-key}.mjs",
         "tests/*.test.mjs",
+        "tests/windows-observer-cli.mjs",
         "tests/ui.spec.ts",
         "tests/browser.ts",
         "vite.config.ts",
@@ -54,7 +55,6 @@
   },
   "ignoreDependencies": [
     "@tauri-apps/cli",
-    "@tauri-apps/plugin-autostart",
     "svelte-check",
     "typescript",
     "vite",

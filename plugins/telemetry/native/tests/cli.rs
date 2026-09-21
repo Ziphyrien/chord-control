@@ -68,7 +68,12 @@ fn executable_reads_known_parent_and_preserves_registry_and_process_siblings() {
             .unwrap()
             .starts_with("S-1-")
     );
-    assert!(descriptor["value"]["sddl"].as_str().unwrap().contains("D:"));
+    let sddl = descriptor["value"]["sddl"].as_str().unwrap();
+    assert!(sddl.contains("D:"));
+    assert!(
+        !sddl.chars().any(char::is_control),
+        "SDDL contains allocation padding"
+    );
     assert_eq!(result["vendorEvidence"]["schemaVersion"], 1);
     assert_eq!(
         result["vendorEvidence"]["probes"][0]["status"],

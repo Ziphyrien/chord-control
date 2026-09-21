@@ -54,6 +54,8 @@ jobs:
         run: |
           cargo fmt --manifest-path plugins/telemetry/native/Cargo.toml -- --check
           cargo test --locked --manifest-path plugins/telemetry/native/Cargo.toml --target-dir build/plugin-native/com.chord.telemetry
+      - name: Verify native collector JavaScript contract
+        run: vp node tests/windows-observer-cli.mjs
       - name: Set release timestamp
         shell: pwsh
         run: |

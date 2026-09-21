@@ -107,6 +107,9 @@ try {
   console.log(
     "Highest startup task: real COM registration, owner, Unicode path, migration and toggle passed.",
   );
+} catch (error) {
+  console.error("Startup task probe failed:", error);
+  throw error;
 } finally {
   // Retain the executable if cleanup fails so a remaining task never points at a deleted file.
   if (existsSync(executable)) task("disable", false);

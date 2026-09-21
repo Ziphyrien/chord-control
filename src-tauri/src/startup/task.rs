@@ -130,6 +130,95 @@ struct Task {
     enabled: bool,
     current_action: bool,
 }
+// Task Scheduler may return DOMAIN\\user even when registered with a SID.
+// Resolution runs only in the helper process, under request's 15-second deadline.
+fn account_matches_sid(account: &str, expected: &str) -> Result<bool, String> {
+    use windows_sys::Win32::{
+        Foundation::{GetLastError, LocalFree, ERROR_INSUFFICIENT_BUFFER, HANDLE},
+        Security::{Authorization::ConvertSidToStringSidW, LookupAccountNameW},
+    };
+    if account.eq_ignore_ascii_case(expected) {
+        return Ok(true);
+    }
+    if account
+        .get(..2)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("S-"))
+    {
+        return Ok(false);
+    }
+    if account.is_empty() || account.contains('\0') || account.len() > 65536 {
+        return Err("Invalid startup account name".into());
+    }
+    let name: Vec<u16> = account.encode_utf16().chain(Some(0)).collect();
+    let mut sid_bytes = 0u32;
+    let mut domain_chars = 0u32;
+    let mut usage = 0;
+    let result = unsafe {
+        LookupAccountNameW(
+            std::ptr::null(),
+            name.as_ptr(),
+            std::ptr::null_mut(),
+            &mut sid_bytes,
+            std::ptr::null_mut(),
+            &mut domain_chars,
+            &mut usage,
+        )
+    };
+    let code = unsafe { GetLastError() };
+    if result != 0 || code != ERROR_INSUFFICIENT_BUFFER {
+        return Err(format!("LookupAccountNameW size query failed: {code}"));
+    }
+    if sid_bytes == 0 || sid_bytes > 65536 || domain_chars > 65536 {
+        return Err("Startup account lookup exceeded buffer limits".into());
+    }
+    // SID requires DWORD alignment; the API's size remains in bytes.
+    let mut sid = vec![0u32; (sid_bytes as usize).div_ceil(4)];
+    let mut domain = vec![0u16; (domain_chars as usize).max(1)];
+    if unsafe {
+        LookupAccountNameW(
+            std::ptr::null(),
+            name.as_ptr(),
+            sid.as_mut_ptr().cast(),
+            &mut sid_bytes,
+            domain.as_mut_ptr(),
+            &mut domain_chars,
+            &mut usage,
+        )
+    } == 0
+    {
+        return Err(format!(
+            "LookupAccountNameW failed: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    struct LocalSid(HANDLE);
+    impl Drop for LocalSid {
+        fn drop(&mut self) {
+            unsafe {
+                LocalFree(self.0);
+            }
+        }
+    }
+    let mut text = std::ptr::null_mut();
+    if unsafe { ConvertSidToStringSidW(sid.as_mut_ptr().cast(), &mut text) } == 0 {
+        return Err(format!(
+            "ConvertSidToStringSidW failed: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    let _allocation = LocalSid(text.cast());
+    // A Windows SID string is at most 184 UTF-16 code units including NUL.
+    let mut length = 0;
+    while length < 184 && unsafe { *text.add(length) } != 0 {
+        length += 1;
+    }
+    if length == 184 {
+        return Err("Startup account SID string exceeded limit".into());
+    }
+    let resolved = String::from_utf16(unsafe { std::slice::from_raw_parts(text, length) })
+        .map_err(|e| e.to_string())?;
+    Ok(resolved.eq_ignore_ascii_case(expected))
+}
 fn inspect(task: &IRegisteredTask, spec: &Spec) -> Result<Task, String> {
     unsafe {
         let definition = task.Definition().map_err(error)?;
@@ -140,11 +229,17 @@ fn inspect(task: &IRegisteredTask, spec: &Spec) -> Result<Task, String> {
         principal.UserId(&mut sid).map_err(error)?;
         principal.LogonType(&mut logon).map_err(error)?;
         principal.RunLevel(&mut level).map_err(error)?;
-        if sid.to_string() != spec.sid
-            || logon != TASK_LOGON_INTERACTIVE_TOKEN
-            || level != TASK_RUNLEVEL_HIGHEST
-        {
-            return Err("Existing startup task has a different security principal".into());
+        let account = sid.to_string();
+        let context = format!(
+            "principal={account:?}, expected_sid={:?}, logon={}, level={}",
+            spec.sid, logon.0, level.0
+        );
+        let same_user = account_matches_sid(&account, &spec.sid)
+            .map_err(|e| format!("Startup principal lookup failed ({context}): {e}"))?;
+        if !same_user || logon != TASK_LOGON_INTERACTIVE_TOKEN || level != TASK_RUNLEVEL_HIGHEST {
+            return Err(format!(
+                "Existing startup task has a different security principal ({context})"
+            ));
         }
         let actions = definition.Actions().map_err(error)?;
         let mut count = 0;
@@ -176,8 +271,14 @@ fn inspect(task: &IRegisteredTask, spec: &Spec) -> Result<Task, String> {
         let mut enabled = VARIANT_BOOL::default();
         trigger.UserId(&mut owner).map_err(error)?;
         trigger.Enabled(&mut enabled).map_err(error)?;
-        if owner.to_string() != spec.sid {
-            return Err("Existing startup trigger belongs to another user".into());
+        let owner = owner.to_string();
+        let same_user = account_matches_sid(&owner, &spec.sid).map_err(|e| {
+            format!("Startup trigger lookup failed (user={owner:?}, {context}): {e}")
+        })?;
+        if !same_user {
+            return Err(format!(
+                "Existing startup trigger belongs to another user (user={owner:?}, {context})"
+            ));
         }
         Ok(Task {
             enabled: task.Enabled().map_err(error)?.as_bool() && enabled.as_bool(),
@@ -299,4 +400,26 @@ fn execute(operation: &str) -> Result<bool, String> {
         return Err("Startup setting verification failed".into());
     }
     Ok(actual)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::account_matches_sid;
+
+    #[test]
+    fn sid_comparison_is_exact_and_case_insensitive() {
+        assert!(account_matches_sid("s-1-5-21-123", "S-1-5-21-123").unwrap());
+        assert!(!account_matches_sid("S-1-5-21-124", "S-1-5-21-123").unwrap());
+        assert!(!account_matches_sid("s-1-5-21-123-extra", "S-1-5-21-123").unwrap());
+        assert!(account_matches_sid("", "S-1-5-21-123").is_err());
+        assert!(account_matches_sid("user\0other", "S-1-5-21-123").is_err());
+    }
+
+    #[test]
+    fn current_account_name_resolves_to_token_sid() {
+        let sid = crate::elevation::current().unwrap().sid;
+        let username = std::env::var("USERNAME").expect("USERNAME must identify the test user");
+        assert!(account_matches_sid(&username, &sid).unwrap());
+        assert!(!account_matches_sid(&username, "S-1-0-0").unwrap());
+    }
 }

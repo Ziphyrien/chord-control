@@ -450,6 +450,28 @@ fn sid_text(sid: PSID) -> Probe<String> {
         .map_err(|_| invalid_data("registry.securityDescriptor", "Invalid SID encoding"))
 }
 
+fn sddl_text(text: *const u16, capacity: u32) -> Probe<String> {
+    let stage = "registry.securityDescriptor";
+    if text.is_null() || capacity == 0 || capacity > 4097 {
+        return Err(Failure::new(122, stage, "Invalid SDDL allocation size"));
+    }
+    // Windows may report an allocation longer than the string. Stop at the first
+    // terminator instead of copying padding or reading uninitialized trailing units.
+    let mut length = 0;
+    while length < capacity as usize && unsafe { *text.add(length) } != 0 {
+        length += 1;
+    }
+    if length == capacity as usize {
+        return Err(invalid_data(stage, "Unterminated SDDL string"));
+    }
+    let sddl = String::from_utf16(unsafe { std::slice::from_raw_parts(text, length) })
+        .map_err(|_| invalid_data(stage, "Invalid SDDL encoding"))?;
+    if sddl.len() > 4096 {
+        return Err(Failure::new(122, stage, "SDDL exceeds 4096 bytes"));
+    }
+    Ok(sddl)
+}
+
 fn descriptor_summary(descriptor: &LocalAllocation) -> Probe<Value> {
     let stage = "registry.securityDescriptor";
     let (mut text, mut length) = (null_mut(), 0);
@@ -466,14 +488,7 @@ fn descriptor_summary(descriptor: &LocalAllocation) -> Probe<Value> {
         return Err(last_error(stage));
     }
     let _allocation = LocalAllocation(text.cast());
-    if length == 0 || length > 4097 {
-        return Err(Failure::new(122, stage, "SDDL exceeds 4096 units"));
-    }
-    let sddl = String::from_utf16(unsafe { std::slice::from_raw_parts(text, length as usize - 1) })
-        .map_err(|_| invalid_data(stage, "Invalid SDDL encoding"))?;
-    if sddl.len() > 4096 {
-        return Err(Failure::new(122, stage, "SDDL exceeds 4096 bytes"));
-    }
+    let sddl = sddl_text(text, length)?;
     let (mut owner, mut group, mut defaulted) = (null_mut(), null_mut(), 0);
     let (mut control, mut revision) = (0, 0);
     let (mut present, mut acl) = (0, null_mut());
@@ -641,6 +656,26 @@ pub fn registry(request: &RegistryRequest) -> Probe<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sddl_ends_at_terminator_before_allocation_padding() {
+        let padded = [
+            b'O' as u16,
+            b':' as u16,
+            b'S' as u16,
+            b'Y' as u16,
+            0,
+            0,
+            0xd800,
+        ];
+        assert_eq!(
+            sddl_text(padded.as_ptr(), padded.len() as u32).unwrap(),
+            "O:SY"
+        );
+        assert!(sddl_text(padded.as_ptr(), 4).is_err());
+        assert!(sddl_text(std::ptr::null(), 0).is_err());
+        let invalid = [0xd800, 0];
+        assert!(sddl_text(invalid.as_ptr(), 2).is_err());
+    }
 
     #[test]
     fn actual_process_identity_and_optional_version_failure() {

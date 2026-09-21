@@ -127,7 +127,7 @@
     },
     "plugins/telemetry": {
       "name": "com.chord.telemetry",
-      "version": "1.2.0",
+      "version": "1.2.1",
     },
     "plugins/telemetry/ui": {
       "name": "@chord-control/telemetry-ui",
