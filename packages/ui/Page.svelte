@@ -22,9 +22,9 @@
       <h1 id={titleId}>{title}</h1>
       {#if description}<p>{description}</p>{/if}
     </div>
-    {#if actions}<div class="actions">{@render actions()}</div>{/if}
+    {#if actions}<div class="cc-page-actions">{@render actions()}</div>{/if}
   </header>
-  <div class="content">{@render children()}</div>
+  <div class="cc-page-content">{@render children()}</div>
 </main>
 
 <style>
@@ -56,12 +56,12 @@
     margin: 10px 0 0;
     color: var(--cc-muted, #626964);
   }
-  .actions {
+  .cc-page-actions {
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
   }
-  .content {
+  .cc-page-content {
     display: grid;
     gap: 20px;
   }

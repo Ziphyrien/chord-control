@@ -16,7 +16,7 @@
 
 <Select.Root type="single" bind:value {items} allowDeselect={false}>
   <Select.Trigger class="cc-select-trigger" aria-label={label}>
-    <span class="label">{selectedLabel}</span>
+    <span class="cc-select-label">{selectedLabel}</span>
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" />
     </svg>
@@ -28,7 +28,7 @@
           <Select.Item class="cc-select-option" value={item.value} label={item.label}>
             {#snippet children({ selected })}
               <span>{item.label}</span>
-              <span class="check" aria-hidden="true">{selected ? "✓" : ""}</span>
+              <span class="cc-select-check" aria-hidden="true">{selected ? "✓" : ""}</span>
             {/snippet}
           </Select.Item>
         {/each}
@@ -63,7 +63,7 @@
     outline: 2px solid var(--cc-focus, #476c53);
     outline-offset: 3px;
   }
-  .label {
+  .cc-select-label {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -100,7 +100,7 @@
   :global(.cc-select-option[data-highlighted]) {
     background: var(--cc-accent, #e7eee7);
   }
-  .check {
+  .cc-select-check {
     flex: 0 0 16px;
     color: var(--cc-focus, #476c53);
   }

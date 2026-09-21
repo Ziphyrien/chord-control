@@ -12,21 +12,27 @@
   } = $props();
 </script>
 
-<div {id} class={["notice", tone]} role={tone === "error" ? "alert" : "status"} aria-atomic="true">
+<div
+  {id}
+  class="cc-notice"
+  data-tone={tone}
+  role={tone === "error" ? "alert" : "status"}
+  aria-atomic="true"
+>
   {@render children()}
 </div>
 
 <style>
-  .notice {
+  .cc-notice {
     min-height: 1.6em;
     color: var(--cc-muted, #626964);
     font: var(--cc-font, 15px/1.6 system-ui, sans-serif);
     overflow-wrap: anywhere;
   }
-  .success {
+  .cc-notice[data-tone="success"] {
     color: var(--cc-success, #356045);
   }
-  .error {
+  .cc-notice[data-tone="error"] {
     color: var(--cc-danger, #a02d28);
   }
 </style>

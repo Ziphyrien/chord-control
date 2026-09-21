@@ -4,6 +4,9 @@
   import Disclosure from "../Disclosure.svelte";
   import Checkbox from "../Checkbox.svelte";
   import Switch from "../Switch.svelte";
+  import Notice from "../Notice.svelte";
+  import Page from "../Page.svelte";
+  import Facts from "../Facts.svelte";
 
   let showing = $state(false);
   let value = $state("all");
@@ -21,6 +24,9 @@
   ];
 </script>
 
+<Notice id="notice-neutral">Ready</Notice>
+<Notice id="notice-success" tone="success">Plugin paused</Notice>
+<Notice id="notice-error" tone="error">Request failed</Notice>
 <form
   onsubmit={(event) => {
     event.preventDefault();
@@ -80,3 +86,9 @@
     <button onclick={() => (showing = false)}>Cancel</button>
   </Modal>
 {/if}
+
+<Page title="Portable page" description="Shared page fixture">
+  {#snippet actions()}<button type="button">Page action</button>{/snippet}
+  <p data-testid="page-content">Page contents</p>
+  <Facts id="page-facts" items={[{ label: "State", value: "Ready" }]} />
+</Page>

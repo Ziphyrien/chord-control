@@ -47,6 +47,42 @@ test(
       await page.setContent('<!doctype html><html lang="en"><body></body></html>');
       await page.addScriptTag({ content: script.code });
 
+      // Host banner classes must not turn shared messages into nested panels.
+      await page.addStyleTag({
+        content: `.notice, .success, .error, .actions, .content, .heading, .label, .check {
+          padding: 16px 18px; margin-bottom: 24px; border: 1px solid;
+          background: rgb(30, 55, 20); display: flex; gap: 16px;
+        }`,
+      });
+      async function undecorated(locator) {
+        const style = await locator.evaluate((element) => {
+          const value = getComputedStyle(element);
+          return {
+            padding: value.padding,
+            margin: value.margin,
+            border: value.borderWidth,
+            background: value.backgroundColor,
+          };
+        });
+        assert.deepEqual(style, {
+          padding: "0px",
+          margin: "0px",
+          border: "0px",
+          background: "rgba(0, 0, 0, 0)",
+        });
+      }
+      for (const tone of ["neutral", "success", "error"]) {
+        const notice = page.locator(`#notice-${tone}`);
+        await expect(notice).toHaveAttribute("role", tone === "error" ? "alert" : "status");
+        await expect(notice).toHaveAttribute("aria-atomic", "true");
+        await undecorated(notice);
+      }
+      await undecorated(
+        page.getByRole("button", { name: "Page action", exact: true }).locator(".."),
+      );
+      await undecorated(page.getByTestId("page-content").locator(".."));
+      await expect(page.locator("#page-facts dd")).toHaveText("Ready");
+
       const checkbox = page.getByRole("checkbox", { name: "Automatic updates" });
       await expect(checkbox).toHaveAttribute("id", "updates");
       await expect(checkbox).toHaveAttribute("type", "button");
@@ -102,6 +138,7 @@ test(
 
       const filter = page.getByRole("button", { name: "Filter events", exact: true });
       await expect(filter).toHaveText("All events");
+      await undecorated(filter.locator("span").first());
       await filter.focus();
       await page.keyboard.press("Enter");
       await page.keyboard.press("End");
@@ -128,6 +165,7 @@ test(
       const dialog = page.getByRole("dialog", { name: "Preferences" });
       await expect(dialog).toBeVisible();
       await expect(dialog).toHaveAccessibleDescription("Choose which events to display.");
+      await undecorated(dialog.getByRole("heading").locator(".."));
       await expect(dialog).toHaveCSS("position", "fixed");
       await expect(dialog).toHaveCSS("background-color", "rgb(255, 255, 255)");
       for (let index = 0; index < 6; index++) {
@@ -137,6 +175,7 @@ test(
       await page.getByRole("button", { name: "Dialog filter", exact: true }).click();
       const option = page.getByRole("option", { name: "Needs attention" });
       await expect(option).toBeVisible();
+      await undecorated(option.locator("span[aria-hidden=true]"));
       const menu = page.getByRole("listbox");
       await expect(menu).toHaveCSS("background-color", "rgb(255, 255, 255)");
       assert(
