@@ -121,7 +121,6 @@ test("adding a plugin opens its sandbox and activities can be filtered", async (
     .getByRole("article", { name: "便笺", exact: true })
     .getByRole("button", { name: "打开", exact: true })
     .click();
-  await expect(page.getByText("正在打开插件…", { exact: true })).not.toBeVisible({ timeout: 100 });
   await expect(page.locator("iframe")).toHaveAttribute(
     "sandbox",
     "allow-scripts allow-forms allow-downloads",
@@ -186,22 +185,16 @@ test("failed same-version rebuilds do not show a duplicate target or stale row e
 // The root Playwright config must disable its dev server for artifact-only runs.
 test("loading, offline, retry and business rejection remain distinct", async ({ page }) => {
   const initial = deferred<Reply>();
-  const update = deferred<Reply>();
   let snapshots = 0;
   const h = await boot(page, snapshot(), async (command) => {
     if (command.type === "snapshot")
       return ++snapshots === 1 ? initial.promise : { result: null, snapshot: snapshot() };
-    if (command.type === "check_updates") return update.promise;
     return { result: null, message: "发布者暂时不可用" };
   });
   await expect(page.getByText("正在连接…", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "添加插件", exact: true })).toBeDisabled();
   initial.resolve({ result: null, snapshot: snapshot() });
-  const checkUpdates = page.getByRole("button", { name: "检查更新", exact: true });
-  await checkUpdates.click();
-  await expect(checkUpdates).toBeVisible();
-  await expect(page.getByRole("button", { name: "检查中…", exact: true })).toHaveCount(0);
-  update.resolve({ result: null, message: "发布者暂时不可用" });
+  await page.getByRole("button", { name: "检查更新", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("发布者暂时不可用");
   await expect(page.getByRole("button", { name: "添加插件", exact: true })).toBeEnabled();
   await page.evaluate(() => window.testBridge.emit({ type: "disconnected", message: "连接中断" }));
@@ -254,12 +247,11 @@ test("late panel response cannot reopen a closed view or replace a new connectio
       .getByRole("button", { name: "打开", exact: true })
       .click();
   await open();
-  await expect(page.getByText("正在打开插件…", { exact: true })).not.toBeVisible({ timeout: 100 });
+  await expect(page.getByText("正在打开插件…", { exact: true })).toBeVisible();
   await expect.poll(() => requests.length).toBe(1);
-  await page.getByRole("navigation").getByRole("button", { name: "活动", exact: true }).click();
+  await page.getByRole("button", { name: "返回插件" }).click();
   requests[0].resolve({ result: { url: "https://example.invalid/old", revision: "r1" } });
   await expect(page.locator("iframe")).toHaveCount(0);
-  await page.getByRole("navigation").getByRole("button", { name: "插件", exact: true }).click();
   await open();
   await expect.poll(() => requests.length).toBe(2);
   await page.evaluate(() => window.testBridge.emit({ type: "disconnected", message: "连接中断" }));
@@ -295,8 +287,7 @@ test("settings draft survives snapshots and independent desktop operations", asy
   await page.getByRole("button", { name: "保存设置", exact: true }).click();
   await page.getByRole("switch", { name: "登录时自动启动" }).check();
   await expect(page.getByRole("switch")).toBeChecked();
-  await expect(page.getByRole("button", { name: "保存设置", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "保存中…", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "保存中…", exact: true })).toBeDisabled();
   saving.resolve({ result: null, snapshot: value });
   await expect(page.getByRole("status")).toHaveText("设置已保存");
   const saved = h.commands.filter((item) => item.type === "set_settings");

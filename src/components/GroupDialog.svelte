@@ -40,7 +40,13 @@
       class="primary"
       disabled={!available || busy}
       onclick={onconfirm}
-      >{confirmation.needsRefresh ? "刷新名单" : ignoring ? "确认忽略" : "确认暂停"}</button
+      >{busy
+        ? "处理中…"
+        : confirmation.needsRefresh
+          ? "刷新名单"
+          : ignoring
+            ? "确认忽略"
+            : "确认暂停"}</button
     >
   </div>
 </Modal>
