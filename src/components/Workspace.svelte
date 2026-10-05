@@ -25,6 +25,9 @@
   const model = $derived(view.state);
   const online = $derived(model.connection === "online");
   const canMutate = $derived(online && !model.pending.mutation && !model.pending.refresh);
+  const operationFeedback = $derived(
+    model.connection === "online" ? (Object.values(model.feedback)[0] ?? "") : "",
+  );
   const pages = [
     { path: "/", label: "插件" },
     { path: "/activities", label: "活动" },
@@ -104,6 +107,11 @@
         <span>{model.snapshot ? "正在同步…" : "正在连接…"}</span>
       </div>
     {/if}
+    {#if operationFeedback}
+      <div class="operation-progress" role="status" aria-live="polite">
+        <span>{operationFeedback}</span>
+      </div>
+    {/if}
     {#each errors as [key, error] (key)}
       <div class="notice error" role="alert">
         <span>{error}</span><button
@@ -113,12 +121,8 @@
         >
       </div>
     {/each}
-    {#if model.panel || model.opening}
-      <PluginPanel
-        panel={model.panel}
-        opening={model.opening}
-        onclose={() => session.closePanel()}
-      />
+    {#if model.panel}
+      <PluginPanel panel={model.panel} onclose={() => session.closePanel()} />
     {:else}
       {@render children()}
     {/if}

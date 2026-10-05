@@ -1,6 +1,8 @@
+export type LoadingSamples = Readonly<Record<string, readonly number[]>>;
+
 export interface LoadingProfileStore {
-  read(): readonly number[];
-  write(samples: readonly number[]): void;
+  read(): LoadingSamples;
+  write(samples: LoadingSamples): void;
 }
 
 const PROFILE_KEY = "chord-control.loading-profile.v1";
@@ -25,27 +27,39 @@ const validDuration = (value: unknown): value is number =>
   value > 0 &&
   value <= MAX_RECORDED_DURATION_MS;
 
-const normalize = (samples: readonly unknown[]): number[] =>
+const normalizeSamples = (samples: readonly unknown[]): number[] =>
   samples.filter(validDuration).slice(-PROFILE_SAMPLE_LIMIT);
+
+const normalizeProfile = (profile: LoadingSamples): Record<string, number[]> =>
+  Object.fromEntries(
+    Object.entries(profile)
+      .map(([channel, samples]) => [channel, normalizeSamples(samples)] as const)
+      .filter(([, samples]) => samples.length),
+  );
+
+const parseProfile = (value: unknown): Record<string, number[]> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const samples = (value as StoredProfile).samples;
+  if (Array.isArray(samples)) return { connection: normalizeSamples(samples) };
+  if (!samples || typeof samples !== "object" || Array.isArray(samples)) return {};
+  return normalizeProfile(samples as LoadingSamples);
+};
 
 const browserStore: LoadingProfileStore = {
   read() {
     try {
       const storage = browserStorage();
-      if (!storage) return [];
-      const parsed: unknown = JSON.parse(storage.getItem(PROFILE_KEY) ?? "null");
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
-      const samples = (parsed as StoredProfile).samples;
-      return Array.isArray(samples) ? normalize(samples) : [];
+      if (!storage) return {};
+      return parseProfile(JSON.parse(storage.getItem(PROFILE_KEY) ?? "null"));
     } catch {
-      return [];
+      return {};
     }
   },
   write(samples) {
     try {
       const storage = browserStorage();
       if (!storage) return;
-      storage.setItem(PROFILE_KEY, JSON.stringify({ samples: normalize(samples) }));
+      storage.setItem(PROFILE_KEY, JSON.stringify({ samples: normalizeProfile(samples) }));
     } catch {
       // Storage can be unavailable in private/browser-preview contexts; memory still adapts.
     }
@@ -60,30 +74,35 @@ const percentile = (samples: readonly number[], rank: number): number => {
 };
 
 /**
- * Learns the controller's actual response distribution instead of assigning a
- * spinner delay to every startup. The cold-start budget is the only prior;
- * later sessions use persisted percentiles from real controller observations.
+ * Learns each controller interaction's actual response distribution instead of
+ * assigning an eager spinner to every action. The cold-start budget is the
+ * only prior; later interactions use persisted percentiles from observations.
  */
 export class AdaptiveLoadingPolicy {
-  private samples: number[];
+  private samples: Record<string, number[]>;
 
   constructor(private readonly store: LoadingProfileStore = browserStore) {
-    this.samples = normalize(store.read());
+    this.samples = normalizeProfile(store.read());
   }
 
-  /** Hide the indicator for the normal tail of observed responses. */
-  revealDelay(): number {
-    return Math.max(COLD_START_BUDGET_MS, Math.round(percentile(this.samples, 0.75)));
+  /** Hide visual feedback for the normal tail of observed responses. */
+  revealDelay(channel = "connection"): number {
+    return Math.max(
+      COLD_START_BUDGET_MS,
+      Math.round(percentile(this.samples[channel] ?? [], 0.75)),
+    );
   }
 
-  /** Hysteresis is also learned; it is not a second arbitrary timeout. */
-  settleDelay(): number {
-    return Math.max(COLD_START_BUDGET_MS, Math.round(percentile(this.samples, 0.5)));
+  /** Hysteresis is learned per interaction; it is not a second eager timeout. */
+  settleDelay(channel = "connection"): number {
+    return Math.max(COLD_START_BUDGET_MS, Math.round(percentile(this.samples[channel] ?? [], 0.5)));
   }
 
-  observe(duration: number): void {
+  observe(channel: string, duration: number): void {
     if (!validDuration(duration)) return;
-    this.samples = [...this.samples, duration].slice(-PROFILE_SAMPLE_LIMIT);
+    this.samples[channel] = [...(this.samples[channel] ?? []), duration].slice(
+      -PROFILE_SAMPLE_LIMIT,
+    );
     this.store.write(this.samples);
   }
 }

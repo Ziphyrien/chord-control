@@ -13,7 +13,7 @@
   <h1>插件</h1>
   <div class="actions">
     <button disabled={!available} onclick={() => session.run({ type: "check_updates" })}
-      >{model.pending.mutation === "check_updates" ? "检查中…" : "检查更新"}</button
+      >检查更新</button
     >
     <button class="primary" disabled={!available} onclick={openAdd}>添加插件</button>
   </div>

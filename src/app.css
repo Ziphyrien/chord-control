@@ -240,7 +240,8 @@ main {
 .connection-banner button {
   flex-shrink: 0;
 }
-.connection-progress {
+.connection-progress,
+.operation-progress {
   position: fixed;
   z-index: 30;
   inset: 0 0 auto;
@@ -251,7 +252,8 @@ main {
   transform-origin: left center;
   animation: connection-progress 1.4s ease-in-out infinite;
 }
-.connection-progress span {
+.connection-progress span,
+.operation-progress span {
   position: fixed;
   top: 12px;
   right: 18px;
@@ -275,7 +277,8 @@ main {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .connection-progress {
+  .connection-progress,
+  .operation-progress {
     animation: none;
   }
 }

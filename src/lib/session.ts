@@ -22,18 +22,34 @@ export interface SessionState {
   /** Delayed/hysteretic visual feedback; fast connections never flash a loader. */
   loadingVisible: boolean;
   snapshot: ControllerSnapshot | null;
+  /** Immediate operation locks keep controls safe without changing visible labels. */
   pending: Readonly<Record<string, string>>;
+  /** Delayed visual feedback; fast operations never flash their loading text. */
+  feedback: Readonly<Record<string, string>>;
   errors: Readonly<Record<string, string>>;
   notice: string;
   autostart: boolean | null;
   panel: PluginPanel | null;
-  opening: string | null;
   confirmation: GroupConfirmation | null;
 }
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 const objectResult = (value: Json): value is { [key: string]: Json } =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+const feedbackLabels: Record<string, string> = {
+  read: "正在读取启动设置…",
+  write: "正在保存启动设置…",
+  open: "正在打开数据目录…",
+  snapshot: "正在刷新插件列表…",
+  check_updates: "正在检查更新…",
+  install: "正在安装插件…",
+  add_plugin: "正在添加插件…",
+  set_enabled: "正在更新插件状态…",
+  remove_plugin: "正在移除插件…",
+  set_settings: "正在保存设置…",
+};
+const operationFeedbackLabel = (key: string, label: string): string =>
+  key === "panel" ? "正在打开插件…" : (feedbackLabels[label] ?? "正在处理…");
 
 /** Application state is independent of Svelte and native APIs, so races can be probed directly. */
 export class ControllerSession {
@@ -42,11 +58,11 @@ export class ControllerSession {
     loadingVisible: false,
     snapshot: null,
     pending: {},
+    feedback: {},
     errors: {},
     notice: "",
     autostart: null,
     panel: null,
-    opening: null,
     confirmation: null,
   };
   private listeners = new Set<(state: SessionState) => void>();
@@ -63,6 +79,9 @@ export class ControllerSession {
   private connectionStartedAt = 0;
   private loadingShownAt = 0;
   private readonly loadingPolicy: AdaptiveLoadingPolicy;
+  private feedbackTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private feedbackShownAt = new Map<string, number>();
+  private feedbackGeneration = new Map<string, number>();
 
   readonly client: ControllerClient;
   readonly desktop: DesktopAdapter;
@@ -114,8 +133,25 @@ export class ControllerSession {
     clearTimeout(this.connectionTimer);
     clearTimeout(this.loadingTimer);
     this.loadingTimer = undefined;
+    for (const timer of this.feedbackTimers.values()) clearTimeout(timer);
+    this.feedbackTimers.clear();
+    this.feedbackShownAt.clear();
+    this.feedbackGeneration.clear();
     this.connectionStartedAt = 0;
     this.loadingShownAt = 0;
+  }
+  private clearFeedbackTimer(key: string): void {
+    const timer = this.feedbackTimers.get(key);
+    if (timer) clearTimeout(timer);
+    this.feedbackTimers.delete(key);
+  }
+  private clearFeedback(key: string): void {
+    this.clearFeedbackTimer(key);
+    this.feedbackShownAt.delete(key);
+    if (!(key in this.state.feedback)) return;
+    const feedback = { ...this.state.feedback };
+    delete feedback[key];
+    this.patch({ feedback });
   }
   start(): () => void {
     this.active = true;
@@ -135,10 +171,10 @@ export class ControllerSession {
       connection: "loading",
       loadingVisible: false,
       pending: {},
+      feedback: {},
       errors: {},
       notice: "",
       panel: null,
-      opening: null,
       confirmation: null,
       autostart: null,
     });
@@ -182,7 +218,7 @@ export class ControllerSession {
       const elapsed = this.connectionStartedAt
         ? Math.max(0, Date.now() - this.connectionStartedAt)
         : 0;
-      if (elapsed) this.loadingPolicy.observe(elapsed);
+      if (elapsed) this.loadingPolicy.observe("connection", elapsed);
       this.connectionStartedAt = 0;
       const shownAt = this.loadingShownAt;
       this.loadingShownAt = 0;
@@ -215,8 +251,8 @@ export class ControllerSession {
         connection: "offline",
         loadingVisible: false,
         pending: {},
+        feedback: {},
         panel: null,
-        opening: null,
         confirmation: null,
         notice: "",
       });
@@ -236,8 +272,20 @@ export class ControllerSession {
     const epoch = this.epoch;
     this.operations.set(key, token);
     this.clearError(key);
-    this.patch({ pending: { ...this.state.pending, [key]: label } });
+    this.clearFeedback(key);
+    const generation = (this.feedbackGeneration.get(key) ?? 0) + 1;
+    this.feedbackGeneration.set(key, generation);
+    const startedAt = Date.now();
+    const feedbackLabel = operationFeedbackLabel(key, label);
     const current = () => this.active && epoch === this.epoch && this.operations.get(key) === token;
+    const revealTimer = setTimeout(() => {
+      this.feedbackTimers.delete(key);
+      if (!current() || this.feedbackGeneration.get(key) !== generation) return;
+      this.feedbackShownAt.set(key, Date.now());
+      this.patch({ feedback: { ...this.state.feedback, [key]: feedbackLabel } });
+    }, this.loadingPolicy.revealDelay(key));
+    this.feedbackTimers.set(key, revealTimer);
+    this.patch({ pending: { ...this.state.pending, [key]: label } });
     try {
       const result = await task();
       if (!current() || !valid()) return false;
@@ -247,11 +295,31 @@ export class ControllerSession {
       if (current() && valid()) this.fail(key, error);
       return false;
     } finally {
+      this.clearFeedbackTimer(key);
       if (current()) {
+        const shownAt = this.feedbackShownAt.get(key);
+        this.feedbackShownAt.delete(key);
         this.operations.delete(key);
         const pending = { ...this.state.pending };
         delete pending[key];
+        this.loadingPolicy.observe(key, Math.max(0, Date.now() - startedAt));
         this.patch({ pending });
+        const remaining = shownAt
+          ? Math.max(0, this.loadingPolicy.settleDelay(key) - (Date.now() - shownAt))
+          : 0;
+        if (remaining) {
+          const hideTimer = setTimeout(() => {
+            this.feedbackTimers.delete(key);
+            if (
+              !this.active ||
+              epoch !== this.epoch ||
+              this.feedbackGeneration.get(key) !== generation
+            )
+              return;
+            this.clearFeedback(key);
+          }, remaining);
+          this.feedbackTimers.set(key, hideTimer);
+        } else this.clearFeedback(key);
       }
     }
   }
@@ -276,14 +344,14 @@ export class ControllerSession {
     this.operations.delete("panel");
     const pending = { ...this.state.pending };
     delete pending.panel;
-    this.patch({ panel: null, opening: null, pending });
+    this.patch({ panel: null, pending });
+    this.clearFeedback("panel");
     this.clearError("panel");
   }
   async open(plugin: PluginSummary): Promise<void> {
     if (this.state.connection !== "online") return;
     this.closePanel();
     const panelEpoch = this.panelEpoch;
-    this.patch({ opening: plugin.name });
     await this.perform(
       "panel",
       plugin.id,
@@ -311,7 +379,7 @@ export class ControllerSession {
       },
       () => panelEpoch === this.panelEpoch,
     );
-    if (panelEpoch === this.panelEpoch) this.patch({ opening: null });
+    if (panelEpoch === this.panelEpoch) this.clearFeedback("panel");
   }
 
   requestChange(plugin: PluginSummary, kind: GroupConfirmation["kind"]): void {

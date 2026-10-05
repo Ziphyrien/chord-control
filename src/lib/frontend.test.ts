@@ -11,7 +11,11 @@ import type {
 import { CommandError, ConnectionError, createControllerClient } from "./controller.ts";
 import { browserDesktop, type DesktopAdapter } from "./desktop.ts";
 import { decodeControllerEvent } from "./events.ts";
-import { AdaptiveLoadingPolicy, type LoadingProfileStore } from "./loading-policy.ts";
+import {
+  AdaptiveLoadingPolicy,
+  type LoadingProfileStore,
+  type LoadingSamples,
+} from "./loading-policy.ts";
 import { ControllerSession } from "./session.ts";
 
 // Native Node TypeScript execution: no bundler, Svelte transform or generated artifact.
@@ -111,21 +115,21 @@ async function sessionHarness(t: TestContext, desktop: DesktopAdapter = browserD
     },
   };
 }
-test("loading policy learns the controller latency across session instances", () => {
-  let saved: readonly number[] = [];
+test("loading policy learns each operation latency across session instances", () => {
+  let saved: LoadingSamples = {};
   const store: LoadingProfileStore = {
     read: () => saved,
     write: (samples) => {
-      saved = [...samples];
+      saved = { ...samples };
     },
   };
   const cold = new AdaptiveLoadingPolicy(store);
-  const coldDelay = cold.revealDelay();
-  cold.observe(800);
+  const coldDelay = cold.revealDelay("mutation");
+  cold.observe("mutation", 800);
 
   const learned = new AdaptiveLoadingPolicy(store);
-  assert.ok(learned.revealDelay() > coldDelay);
-  assert.ok(learned.settleDelay() >= coldDelay);
+  assert.ok(learned.revealDelay("mutation") > coldDelay);
+  assert.ok(learned.settleDelay("mutation") >= coldDelay);
 });
 
 test("connection loading feedback skips fast flashes and stays visible briefly after a slow response", async (t) => {
@@ -159,6 +163,30 @@ test("connection loading feedback skips fast flashes and stays visible briefly a
   assert.equal(slow.state.loadingVisible, true);
   await wait(380);
   assert.equal(slow.state.loadingVisible, false);
+});
+
+test("operation feedback gates fast labels and surfaces slow work", async (t) => {
+  const h = await sessionHarness(t);
+  h.handle(async () => null);
+  const fast = h.session.run({ type: "check_updates" });
+  assert.equal(h.session.state.pending.mutation, "check_updates");
+  assert.equal(h.session.state.feedback.mutation, undefined);
+  assert.equal(await fast, true);
+  assert.equal(h.session.state.feedback.mutation, undefined);
+
+  const reply = deferred<Json>();
+  h.handle(async () => reply.promise);
+  const slow = h.session.run({ type: "check_updates" });
+  await wait(120);
+  assert.equal(h.session.state.feedback.mutation, undefined);
+  await wait(180);
+  assert.equal(h.session.state.feedback.mutation, "正在检查更新…");
+  reply.resolve(null);
+  assert.equal(await slow, true);
+  assert.equal(h.session.state.pending.mutation, undefined);
+  assert.equal(h.session.state.feedback.mutation, "正在检查更新…");
+  await wait(320);
+  assert.equal(h.session.state.feedback.mutation, undefined);
 });
 
 async function clientHarness(t: TestContext, timeout = 1_000) {
@@ -457,7 +485,7 @@ test("closed and replaced panel requests cannot change the current panel or pend
   await first;
   assert.deepEqual(h.session.state.panel, null);
   assert.equal(h.session.state.pending.panel, "notes");
-  assert.equal(h.session.state.opening, "notes");
+  assert.equal(h.session.state.feedback.panel, undefined);
   fresh.resolve({ url: "https://plugins.test/new", revision: "r1" });
   await second;
   assert.deepEqual(h.session.state.panel, {

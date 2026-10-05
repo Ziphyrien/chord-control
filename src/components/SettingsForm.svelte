@@ -65,8 +65,8 @@
         disabled={!desktopAvailable || autostart === null || autostartBusy}
       />
     </div>
-    {#if desktopAvailable && autostart === null}<p class="muted">
-        {autostartBusy ? "正在读取启动设置…" : "启动设置暂时不可用，请重新连接后重试。"}
+    {#if desktopAvailable && autostart === null && !autostartBusy}<p class="muted">
+        启动设置暂时不可用，请重新连接后重试。
       </p>{/if}
   </section>
   <form
@@ -138,8 +138,7 @@
       </fieldset>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="actions">
-        <button class="primary" type="submit" disabled={!available}
-          >{saving ? "保存中…" : "保存设置"}</button
+        <button class="primary" type="submit" disabled={!available}>保存设置</button
         >{#if edits}<button
             type="button"
             disabled={saving}
@@ -157,9 +156,7 @@
           <h2 id="directory-title">数据存储</h2>
           <p class="muted path">{dataDir}</p>
         </div>
-        <button disabled={!desktopAvailable || directoryBusy} onclick={onopen}
-          >{directoryBusy ? "正在打开…" : "打开文件夹"}</button
-        >
+        <button disabled={!desktopAvailable || directoryBusy} onclick={onopen}>打开文件夹</button>
       </div>
     </section>{/if}
 </div>
