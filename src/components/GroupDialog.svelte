@@ -34,19 +34,13 @@
   {/if}
   {#if error}<p class="error" role="alert">{error}</p>
     <p class="muted">请核对当前名单后再次确认。</p>{/if}
-  <div class="actions dialog-actions">
+  <div class="actions dialog-actions" aria-busy={busy}>
     <button type="button" onclick={onclose}>取消</button><button
       type="button"
       class="primary"
-      disabled={!available || busy}
+      disabled={!available}
       onclick={onconfirm}
-      >{busy
-        ? "处理中…"
-        : confirmation.needsRefresh
-          ? "刷新名单"
-          : ignoring
-            ? "确认忽略"
-            : "确认暂停"}</button
+      >{confirmation.needsRefresh ? "刷新名单" : ignoring ? "确认忽略" : "确认暂停"}</button
     >
   </div>
 </Modal>

@@ -191,10 +191,13 @@ test("loading, offline, retry and business rejection remain distinct", async ({ 
       return ++snapshots === 1 ? initial.promise : { result: null, snapshot: snapshot() };
     return { result: null, message: "发布者暂时不可用" };
   });
-  await expect(page.getByText("正在连接…", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "添加插件", exact: true })).toBeDisabled();
+  await expect(page.getByText("正在连接…", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "添加插件", exact: true })).toHaveCount(0);
   initial.resolve({ result: null, snapshot: snapshot() });
-  await page.getByRole("button", { name: "检查更新", exact: true }).click();
+  const checkUpdates = page.getByRole("button", { name: "检查更新", exact: true });
+  await checkUpdates.click();
+  await expect(checkUpdates).toHaveText("检查更新");
+  await expect(checkUpdates).toBeEnabled();
   await expect(page.getByRole("alert")).toContainText("发布者暂时不可用");
   await expect(page.getByRole("button", { name: "添加插件", exact: true })).toBeEnabled();
   await page.evaluate(() => window.testBridge.emit({ type: "disconnected", message: "连接中断" }));
@@ -247,9 +250,10 @@ test("late panel response cannot reopen a closed view or replace a new connectio
       .getByRole("button", { name: "打开", exact: true })
       .click();
   await open();
-  await expect(page.getByText("正在打开插件…", { exact: true })).toBeVisible();
+  await expect(page.getByRole("article", { name: "基础服务", exact: true })).toBeVisible();
+  await expect(page.getByText("正在打开插件…", { exact: true })).toHaveCount(0);
   await expect.poll(() => requests.length).toBe(1);
-  await page.getByRole("button", { name: "返回插件" }).click();
+  await page.getByRole("navigation").getByRole("button", { name: "插件", exact: true }).click();
   requests[0].resolve({ result: { url: "https://example.invalid/old", revision: "r1" } });
   await expect(page.locator("iframe")).toHaveCount(0);
   await open();
@@ -287,7 +291,7 @@ test("settings draft survives snapshots and independent desktop operations", asy
   await page.getByRole("button", { name: "保存设置", exact: true }).click();
   await page.getByRole("switch", { name: "登录时自动启动" }).check();
   await expect(page.getByRole("switch")).toBeChecked();
-  await expect(page.getByRole("button", { name: "保存中…", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "保存设置", exact: true })).toBeEnabled();
   saving.resolve({ result: null, snapshot: value });
   await expect(page.getByRole("status")).toHaveText("设置已保存");
   const saved = h.commands.filter((item) => item.type === "set_settings");

@@ -36,7 +36,7 @@
     error = "";
   }
   async function save() {
-    if (!available) return;
+    if (!available || saving) return;
     try {
       const value = parseSettings(draft);
       if (await onsave(value)) edits = null;
@@ -49,7 +49,7 @@
 <div class="settings">
   <section class="settings-section" aria-labelledby="general-title">
     <h2 id="general-title">常规</h2>
-    <div class="setting-row">
+    <div class="setting-row" aria-busy={autostartBusy}>
       <div>
         <label for="autostart">登录时自动启动</label>
       </div>
@@ -62,11 +62,11 @@
             void ontoggle();
           }
         }
-        disabled={!desktopAvailable || autostart === null || autostartBusy}
+        disabled={!desktopAvailable || autostart === null}
       />
     </div>
     {#if desktopAvailable && autostart === null}<p class="muted">
-        {autostartBusy ? "正在读取启动设置…" : "启动设置暂时不可用，请重新连接后重试。"}
+        启动设置暂时不可用，请重新连接后重试。
       </p>{/if}
   </section>
   <form
@@ -138,11 +138,9 @@
       </fieldset>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="actions">
-        <button class="primary" type="submit" disabled={!available}
-          >{saving ? "保存中…" : "保存设置"}</button
+        <button class="primary" type="submit" disabled={!available}>保存设置</button
         >{#if edits}<button
             type="button"
-            disabled={saving}
             onclick={() => {
               edits = null;
               error = "";
@@ -152,14 +150,12 @@
     </section>
   </form>
   {#if dataDir}<section class="settings-section" aria-labelledby="directory-title">
-      <div class="setting-row">
+      <div class="setting-row" aria-busy={directoryBusy}>
         <div>
           <h2 id="directory-title">数据存储</h2>
           <p class="muted path">{dataDir}</p>
         </div>
-        <button disabled={!desktopAvailable || directoryBusy} onclick={onopen}
-          >{directoryBusy ? "正在打开…" : "打开文件夹"}</button
-        >
+        <button disabled={!desktopAvailable} onclick={onopen}>打开文件夹</button>
       </div>
     </section>{/if}
 </div>

@@ -24,7 +24,7 @@
   const view = new SessionView(untrack(() => session));
   const model = $derived(view.state);
   const online = $derived(model.connection === "online");
-  const canMutate = $derived(online && !model.pending.mutation && !model.pending.refresh);
+  const canMutate = $derived(model.connection !== "offline");
   const pages = [
     { path: "/", label: "插件" },
     { path: "/activities", label: "活动" },
@@ -89,21 +89,15 @@
     </footer>
   </aside>
   <main id="content" tabindex="-1">
-    {#if model.connection !== "online"}
+    {#if model.connection === "offline"}
       <div class="connection-banner" role="status">
         <div>
-          <strong>{model.connection === "loading" ? "正在连接…" : "连接已断开"}</strong>
+          <strong>连接已断开</strong>
           <p>
-            {model.snapshot
-              ? "当前显示上次收到的内容。连接恢复后可继续操作。"
-              : model.connection === "loading"
-                ? "连接后将载入你的插件。"
-                : "请重试连接。"}
+            {model.snapshot ? "当前显示上次收到的内容。连接恢复后可继续操作。" : "请重试连接。"}
           </p>
         </div>
-        {#if model.connection === "offline"}<button onclick={() => session.reconnect()}
-            >重新连接</button
-          >{/if}
+        <button onclick={() => session.reconnect()}>重新连接</button>
       </div>
     {/if}
     {#each errors as [key, error] (key)}
@@ -115,14 +109,12 @@
         >
       </div>
     {/each}
-    {#if model.panel || model.opening}
-      <PluginPanel
-        panel={model.panel}
-        opening={model.opening}
-        onclose={() => session.closePanel()}
-      />
-    {:else}
-      {@render children()}
+    {#if model.connection !== "loading" || model.snapshot}
+      {#if model.panel}
+        <PluginPanel panel={model.panel} onclose={() => session.closePanel()} />
+      {:else}
+        {@render children()}
+      {/if}
     {/if}
   </main>
 </div>
