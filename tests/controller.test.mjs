@@ -158,7 +158,9 @@ for (const recoveryFails of [false, true]) {
     );
     const failed = list.find((item) => item.id === "com.consumer");
     assert.equal(failed.running, !recoveryFails);
-    assert.equal(failed.status, "error");
+    assert.equal(failed.version, "1.0.0");
+    assert.equal(failed.latestVersion, "2.0.0");
+    assert.equal(failed.status, recoveryFails ? "error" : "update");
     assert.match(failed.error, /activation failed/);
     for (const id of ["com.provider", "com.companion"]) {
       const healthy = list.find((item) => item.id === id);

@@ -240,6 +240,49 @@ main {
 .connection-banner button {
   flex-shrink: 0;
 }
+.connection-progress {
+  position: fixed;
+  z-index: 30;
+  inset: 0 0 auto;
+  height: 3px;
+  overflow: visible;
+  pointer-events: none;
+  background: var(--accent);
+  transform-origin: left center;
+  animation: connection-progress 1.4s ease-in-out infinite;
+}
+.connection-progress span {
+  position: fixed;
+  top: 12px;
+  right: 18px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+@keyframes connection-progress {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scaleX(0.18);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(0.72);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .connection-progress {
+    animation: none;
+  }
+}
+.loading-placeholder {
+  min-height: 160px;
+  border-color: transparent;
+}
 .list-toolbar {
   display: flex;
   justify-content: space-between;

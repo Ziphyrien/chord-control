@@ -88,22 +88,20 @@
       <span class="app-version" aria-label="主程序版本">v{HOST_VERSION}</span>
     </footer>
   </aside>
-  <main id="content" tabindex="-1">
-    {#if model.connection !== "online"}
+  <main id="content" tabindex="-1" aria-busy={model.connection === "loading"}>
+    {#if model.connection === "offline"}
       <div class="connection-banner" role="status">
         <div>
-          <strong>{model.connection === "loading" ? "正在连接…" : "连接已断开"}</strong>
+          <strong>连接已断开</strong>
           <p>
-            {model.snapshot
-              ? "当前显示上次收到的内容。连接恢复后可继续操作。"
-              : model.connection === "loading"
-                ? "连接后将载入你的插件。"
-                : "请重试连接。"}
+            {model.snapshot ? "当前显示上次收到的内容。连接恢复后可继续操作。" : "请重试连接。"}
           </p>
         </div>
-        {#if model.connection === "offline"}<button onclick={() => session.reconnect()}
-            >重新连接</button
-          >{/if}
+        <button onclick={() => session.reconnect()}>重新连接</button>
+      </div>
+    {:else if model.loadingVisible}
+      <div class="connection-progress" role="status" aria-live="polite">
+        <span>{model.snapshot ? "正在同步…" : "正在连接…"}</span>
       </div>
     {/if}
     {#each errors as [key, error] (key)}

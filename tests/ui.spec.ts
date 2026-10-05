@@ -158,6 +158,29 @@ test("pausing a plugin shows a single compact notification", async ({ page }) =>
   expect(h.errors).toEqual([]);
 });
 
+test("failed same-version rebuilds do not show a duplicate target or stale row error", async ({
+  page,
+}) => {
+  const value = snapshot();
+  value.plugins[0] = {
+    ...value.plugins[0],
+    version: "1.0.3",
+    latestVersion: "1.0.3",
+    hasUpdate: true,
+    status: "update",
+    error: "fixture activation failed",
+  };
+  const h = await boot(page, value);
+  await expect(page.getByRole("article")).toHaveCount(3);
+  const row = page.getByRole("article", { name: "基础服务", exact: true });
+  await expect(row).toContainText("v1.0.3");
+  await expect(row).toContainText("有新构建可用");
+  await expect(row).not.toContainText("可更新至 v1.0.3");
+  await expect(row).not.toContainText("fixture activation failed");
+  await expect(row.getByRole("button", { name: "更新", exact: true })).toBeEnabled();
+  expect(h.errors).toEqual([]);
+});
+
 // Browser cases need an externally served frontend. No test body invokes a build.
 // The root Playwright config must disable its dev server for artifact-only runs.
 test("loading, offline, retry and business rejection remain distinct", async ({ page }) => {

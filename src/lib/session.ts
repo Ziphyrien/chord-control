@@ -7,6 +7,7 @@ import type {
 } from "../../shared/protocol.ts";
 import type { ControllerClient } from "./controller.ts";
 import type { DesktopAdapter } from "./desktop.ts";
+import { AdaptiveLoadingPolicy } from "./loading-policy.ts";
 
 export type PluginPanel = { pluginId: string; name: string; url: string; revision: string };
 export type GroupConfirmation = {
@@ -18,6 +19,8 @@ export type GroupConfirmation = {
 };
 export interface SessionState {
   connection: "loading" | "online" | "offline";
+  /** Delayed/hysteretic visual feedback; fast connections never flash a loader. */
+  loadingVisible: boolean;
   snapshot: ControllerSnapshot | null;
   pending: Readonly<Record<string, string>>;
   errors: Readonly<Record<string, string>>;
@@ -36,6 +39,7 @@ const objectResult = (value: Json): value is { [key: string]: Json } =>
 export class ControllerSession {
   state: SessionState = {
     connection: "loading",
+    loadingVisible: false,
     snapshot: null,
     pending: {},
     errors: {},
@@ -55,12 +59,21 @@ export class ControllerSession {
   private snapshotRevision = 0;
   private noticeTimer?: ReturnType<typeof setTimeout>;
   private connectionTimer?: ReturnType<typeof setTimeout>;
+  private loadingTimer?: ReturnType<typeof setTimeout>;
+  private connectionStartedAt = 0;
+  private loadingShownAt = 0;
+  private readonly loadingPolicy: AdaptiveLoadingPolicy;
 
   readonly client: ControllerClient;
   readonly desktop: DesktopAdapter;
-  constructor(client: ControllerClient, desktop: DesktopAdapter) {
+  constructor(
+    client: ControllerClient,
+    desktop: DesktopAdapter,
+    loadingPolicy = new AdaptiveLoadingPolicy(),
+  ) {
     this.client = client;
     this.desktop = desktop;
+    this.loadingPolicy = loadingPolicy;
   }
 
   subscribe(receive: (state: SessionState) => void): () => void {
@@ -99,6 +112,10 @@ export class ControllerSession {
     this.operations.clear();
     clearTimeout(this.noticeTimer);
     clearTimeout(this.connectionTimer);
+    clearTimeout(this.loadingTimer);
+    this.loadingTimer = undefined;
+    this.connectionStartedAt = 0;
+    this.loadingShownAt = 0;
   }
   start(): () => void {
     this.active = true;
@@ -113,8 +130,10 @@ export class ControllerSession {
     this.invalidate();
     const epoch = this.epoch;
     const current = () => this.active && epoch === this.epoch;
+    this.connectionStartedAt = Date.now();
     this.patch({
       connection: "loading",
+      loadingVisible: false,
       pending: {},
       errors: {},
       notice: "",
@@ -123,6 +142,11 @@ export class ControllerSession {
       confirmation: null,
       autostart: null,
     });
+    this.loadingTimer = setTimeout(() => {
+      if (!current() || this.state.connection !== "loading") return;
+      this.loadingShownAt = Date.now();
+      this.patch({ loadingVisible: true });
+    }, this.loadingPolicy.revealDelay());
     this.connectionTimer = setTimeout(() => {
       if (!current() || this.state.connection !== "loading") return;
       this.receive({ type: "disconnected", message: "连接等待超时，请重试" });
@@ -153,8 +177,29 @@ export class ControllerSession {
   private receive(event: ControllerEvent): void {
     if (event.type === "snapshot") {
       clearTimeout(this.connectionTimer);
+      clearTimeout(this.loadingTimer);
+      this.loadingTimer = undefined;
+      const elapsed = this.connectionStartedAt
+        ? Math.max(0, Date.now() - this.connectionStartedAt)
+        : 0;
+      if (elapsed) this.loadingPolicy.observe(elapsed);
+      this.connectionStartedAt = 0;
+      const shownAt = this.loadingShownAt;
+      this.loadingShownAt = 0;
       ++this.snapshotRevision;
       this.patch({ snapshot: event.snapshot, connection: "online" });
+      if (!shownAt) this.patch({ loadingVisible: false });
+      else {
+        const remaining = Math.max(0, this.loadingPolicy.settleDelay() - (Date.now() - shownAt));
+        if (remaining) {
+          const epoch = this.epoch;
+          this.loadingTimer = setTimeout(() => {
+            if (!this.active || epoch !== this.epoch) return;
+            this.loadingTimer = undefined;
+            this.patch({ loadingVisible: false });
+          }, remaining);
+        } else this.patch({ loadingVisible: false });
+      }
       this.clearError("connection");
       const panel = this.state.panel;
       if (panel) {
@@ -168,6 +213,7 @@ export class ControllerSession {
       this.invalidate();
       this.patch({
         connection: "offline",
+        loadingVisible: false,
         pending: {},
         panel: null,
         opening: null,

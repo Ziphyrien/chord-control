@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { setImmediate as tick } from "node:timers/promises";
+import { setImmediate as tick, setTimeout as wait } from "node:timers/promises";
 import { test, type TestContext } from "vite-plus/test";
 import type {
   ControllerCommand,
@@ -11,6 +11,7 @@ import type {
 import { CommandError, ConnectionError, createControllerClient } from "./controller.ts";
 import { browserDesktop, type DesktopAdapter } from "./desktop.ts";
 import { decodeControllerEvent } from "./events.ts";
+import { AdaptiveLoadingPolicy, type LoadingProfileStore } from "./loading-policy.ts";
 import { ControllerSession } from "./session.ts";
 
 // Native Node TypeScript execution: no bundler, Svelte transform or generated artifact.
@@ -110,6 +111,56 @@ async function sessionHarness(t: TestContext, desktop: DesktopAdapter = browserD
     },
   };
 }
+test("loading policy learns the controller latency across session instances", () => {
+  let saved: readonly number[] = [];
+  const store: LoadingProfileStore = {
+    read: () => saved,
+    write: (samples) => {
+      saved = [...samples];
+    },
+  };
+  const cold = new AdaptiveLoadingPolicy(store);
+  const coldDelay = cold.revealDelay();
+  cold.observe(800);
+
+  const learned = new AdaptiveLoadingPolicy(store);
+  assert.ok(learned.revealDelay() > coldDelay);
+  assert.ok(learned.settleDelay() >= coldDelay);
+});
+
+test("connection loading feedback skips fast flashes and stays visible briefly after a slow response", async (t) => {
+  const fast = await sessionHarness(t);
+  assert.equal(fast.session.state.connection, "online");
+  assert.equal(fast.session.state.loadingVisible, false);
+
+  let receive!: (event: ControllerEvent) => void;
+  const slow = new ControllerSession(
+    {
+      async connect(callback) {
+        receive = callback;
+        return () => {};
+      },
+      async send() {
+        return null;
+      },
+    },
+    browserDesktop,
+  );
+  const stop = slow.start();
+  t.onTestFinished(stop);
+  assert.equal(slow.state.loadingVisible, false);
+  await wait(180);
+  assert.equal(slow.state.loadingVisible, false);
+  await wait(240);
+  assert.equal(slow.state.loadingVisible, true);
+
+  receive({ type: "snapshot", snapshot: snapshot() });
+  assert.equal(slow.state.connection, "online");
+  assert.equal(slow.state.loadingVisible, true);
+  await wait(380);
+  assert.equal(slow.state.loadingVisible, false);
+});
+
 async function clientHarness(t: TestContext, timeout = 1_000) {
   const commands: (ControllerCommand & { id: string })[] = [];
   const events: ControllerEvent[] = [];

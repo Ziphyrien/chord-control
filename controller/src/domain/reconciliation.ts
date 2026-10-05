@@ -92,7 +92,10 @@ export function describePlugins(
       item.enabled && !active
         ? (graph.blocked.get(item.id) ?? (unavailable ? `依赖未运行: ${unavailable}` : undefined))
         : undefined;
-    const error = errors.get(item.id);
+    const error = errors.get(item.id),
+      // A failed candidate can leave the previous revision healthy and runnable.
+      // Keep the diagnostic in the summary, but let the row describe the usable state.
+      recoveredUpdate = Boolean(error && update && active);
     return {
       id: item.id,
       name: manifest?.name ?? item.id,
@@ -104,15 +107,17 @@ export function describePlugins(
         ? "ignored"
         : !item.enabled
           ? "paused"
-          : error
-            ? "error"
-            : blockedReason
-              ? "blocked"
-              : update
-                ? "update"
-                : active
-                  ? "active"
-                  : "idle",
+          : recoveredUpdate
+            ? "update"
+            : error
+              ? "error"
+              : blockedReason
+                ? "blocked"
+                : update
+                  ? "update"
+                  : active
+                    ? "active"
+                    : "idle",
       running: active,
       installed: Boolean(item.installed),
       enabled: item.enabled,
