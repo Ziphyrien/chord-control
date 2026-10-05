@@ -135,6 +135,29 @@ test("adding a plugin opens its sandbox and activities can be filtered", async (
   expect(h.errors).toEqual([]);
 });
 
+test("pausing a plugin shows a single compact notification", async ({ page }) => {
+  const value = snapshot();
+  const h = await boot(page, value, async (command) => {
+    if (command.type === "set_enabled") {
+      value.plugins[1] = { ...value.plugins[1], enabled: false, running: false, status: "paused" };
+    }
+    return { result: null, snapshot: value };
+  });
+  const row = page.getByRole("article", { name: "便笺", exact: true });
+  await row.getByRole("button", { name: "暂停", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "确认暂停", exact: true }).click();
+  await expect(row).toContainText("已暂停");
+  const notice = page.getByRole("status").filter({ hasText: "插件已暂停" });
+  await expect(notice).toBeVisible();
+  await expect(notice).toHaveCSS("padding", "0px");
+  await expect(notice).toHaveCSS("margin", "0px");
+  await expect(notice).toHaveCSS("border-width", "0px");
+  await expect(notice).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  const bounds = await page.locator(".toast").boundingBox();
+  expect(bounds?.height).toBeLessThanOrEqual(64);
+  expect(h.errors).toEqual([]);
+});
+
 // Browser cases need an externally served frontend. No test body invokes a build.
 // The root Playwright config must disable its dev server for artifact-only runs.
 test("loading, offline, retry and business rejection remain distinct", async ({ page }) => {

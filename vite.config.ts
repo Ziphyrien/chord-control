@@ -46,25 +46,18 @@ export default defineConfig(({ mode }) => ({
     hookTimeout: 15_000,
     sequence: { hooks: "stack" },
   },
+  resolve: {
+    alias: {
+      "#platform": fileURLToPath(
+        new URL(
+          mode === "ui-test" ? "./tests/browser.ts" : "./src/lib/platform.ts",
+          import.meta.url,
+        ),
+      ),
+    },
+  },
   plugins: lazyPlugins(() =>
-    process.env.VITEST
-      ? [svelte({ configFile: false })]
-      : [
-          sveltekit(
-            createStaticConfig({
-              kit: {
-                alias: {
-                  $platform: fileURLToPath(
-                    new URL(
-                      mode === "ui-test" ? "./tests/browser.ts" : "./src/lib/platform.ts",
-                      import.meta.url,
-                    ),
-                  ),
-                },
-              },
-            }),
-          ),
-        ],
+    process.env.VITEST ? [svelte({ configFile: false })] : [sveltekit(createStaticConfig())],
   ),
   define: {
     __CHORD_CONTROL_REPOSITORY__: JSON.stringify(currentRepositorySlug() ?? ""),

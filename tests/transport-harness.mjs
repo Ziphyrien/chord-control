@@ -23,12 +23,12 @@ exports.default={id:${JSON.stringify(options.id ?? fixtureId)},setup(env){
  if(method==="version")return ${JSON.stringify(version)};
  if(method==="echo")return input;
  if(method==="paths")return host.paths(context);
- if(method==="native")return host.native("wallpaper.get",null,context);
+ if(method==="native")return host.native("diagnostics.snapshot",null,context);
  if(method==="authorize")return ${options.requireService ? "auth.authorize(context)" : "true"};
  return null;
  }});
  ${options.fail ? 'env.onActivate(()=>{throw new Error("fixture activation failed")});' : ""}
- ${options.cleanup ? 'env.own(()=>host.native("wallpaper.get",null,context));' : ""}
+ ${options.cleanup ? 'env.own(()=>host.native("diagnostics.snapshot",null,context));' : ""}
 }};`;
 }
 export async function createTransportHarness(options = {}) {
@@ -177,7 +177,7 @@ export async function createTransportHarness(options = {}) {
           artifactUrl: baseUrl + artifactPath,
           artifactSha256: createHash("sha256").update(zip).digest("hex"),
           ui: "ui/index.html",
-          permissions: extra.permissions ?? (extra.native || extra.cleanup ? ["wallpaper"] : []),
+          permissions: extra.permissions ?? (extra.native || extra.cleanup ? ["diagnostics"] : []),
           ...(extra.provideService || extra.requireService
             ? {
                 services: {

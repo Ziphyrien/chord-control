@@ -1,13 +1,15 @@
 import { defineFacet } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import { PluginDiagnostics } from "../../../sdk/diagnostics.ts";
-import { ControlHost } from "../../../sdk/index.ts";
+import { ControlHost, PluginNative } from "../../../sdk/index.ts";
+import { createWallpaperNative } from "./native.ts";
 import { WallpaperPolicy } from "./wallpaper.ts";
 
 export default defineFacet({
   id: "com.chord.wallpaper-policy.worker",
   setup(env) {
     const host = env.use(ControlHost);
+    const native = env.use(PluginNative);
     const lifetime = new AbortController();
     let policy: WallpaperPolicy | undefined;
     let active = false;
@@ -19,9 +21,9 @@ export default defineFacet({
     });
     env.onActivate(async () => {
       const paths = await host.paths(BACKGROUND_CONTEXT);
-      policy = new WallpaperPolicy(host, paths.dataDir);
+      policy = new WallpaperPolicy(createWallpaperNative(native), paths.dataDir);
       try {
-        await policy.apply();
+        await policy.apply(withAbortSignal(lifetime.signal, BACKGROUND_CONTEXT));
         if (lifetime.signal.aborted) {
           await policy.restore();
           return;
@@ -33,9 +35,9 @@ export default defineFacet({
       }
     });
     env.provide(PluginDiagnostics, {
-      async snapshot() {
+      async snapshot(context) {
         if (!policy || !active) throw new Error("壁纸策略尚未启动");
-        const result = await policy.measure();
+        const result = await policy.measure(context);
         return {
           since,
           observedAt: new Date().toISOString(),

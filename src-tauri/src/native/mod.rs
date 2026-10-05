@@ -4,10 +4,6 @@ mod diagnostics;
 mod failures;
 #[cfg(windows)]
 pub(crate) mod process;
-#[cfg(windows)]
-mod registry;
-#[cfg(windows)]
-mod wallpaper;
 use crate::{controller::Generation, sync::lock};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -50,8 +46,6 @@ impl Request {
             return Err("无效原生请求".into());
         }
         let permission = match self.operation.as_str() {
-            "registry.read" | "registry.write" => "registry-current-user",
-            "wallpaper.get" | "wallpaper.set" => "wallpaper",
             "process.list" | "process.spawn" | "process.terminate" => "process-control",
             _ => return Err("未知原生能力".into()),
         };
@@ -60,10 +54,10 @@ impl Request {
         }
         #[cfg(windows)]
         {
-            match permission {
-                "registry-current-user" => registry::execute(&self.operation, &self.input),
-                "wallpaper" => wallpaper::execute(&self.operation, &self.input).map_err(Into::into),
-                _ => process::execute(&self.operation, &self.input).map_err(Into::into),
+            if permission == "process-control" {
+                process::execute(&self.operation, &self.input).map_err(Into::into)
+            } else {
+                Err("未知原生能力".into())
             }
         }
         #[cfg(not(windows))]

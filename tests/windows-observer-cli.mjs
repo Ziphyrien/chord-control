@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { collectWindows } from "../plugins/telemetry/src/windows.ts";
 import { projectWindowsResponse } from "../plugins/telemetry/src/windows-response.ts";
+import { runNativeAsset } from "../controller/src/infrastructure/native-assets.ts";
 
 assert.equal(process.platform, "win32");
 const executable = resolve(
@@ -51,6 +52,9 @@ assert.equal(result.vendorEvidence.probes.length, 8);
 assert.ok(result.vendorEvidence.probes.every((probe) => probe.status === "ready"));
 // Cancellation must finish the native process before an update removes its old EXE.
 const root = await mkdtemp(join(tmpdir(), "chord-observer-close-"));
+const native = {
+  call: (asset, input, context) => runNativeAsset(root, asset, input, context.abortSignal),
+};
 try {
   await mkdir(join(root, "native"));
   const copy = join(root, "native/chord-observer.exe");
@@ -59,7 +63,7 @@ try {
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), delay);
     try {
-      await collectWindows(root, {}, abort.signal);
+      await collectWindows(native, {}, abort.signal);
       unlinkSync(copy);
     } finally {
       clearTimeout(timer);

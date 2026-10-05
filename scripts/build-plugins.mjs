@@ -45,6 +45,28 @@ async function sourcePath(directory, name) {
   return path;
 }
 
+function assertNativeDeclaration(control) {
+  const permissions = Array.isArray(control.permissions) ? control.permissions : [];
+  const hasPermission = permissions.includes("native-asset");
+  const native = control.native;
+  if (native !== undefined) {
+    if (
+      native === null ||
+      typeof native !== "object" ||
+      typeof native.manifest !== "string" ||
+      typeof native.binary !== "string" ||
+      typeof native.asset !== "string" ||
+      !native.asset.startsWith("native/") ||
+      !native.asset.toLowerCase().endsWith(".exe")
+    )
+      throw new Error("Invalid native plugin declaration");
+    if (!hasPermission)
+      throw new Error("Native plugin declaration requires native-asset permission");
+  } else if (hasPermission) {
+    throw new Error("native-asset permission requires a native plugin declaration");
+  }
+}
+
 async function compilePlugin({ directory, bundleDir, scratch, pkg }) {
   const [{ build }, { bundleFacets }] = await Promise.all([
     import("esbuild"),
@@ -121,6 +143,7 @@ export async function buildPlugin({
   const pkg = await readJson(join(directory, "package.json"));
   assertId(pkg.name);
   const control = pkg.control ?? {};
+  assertNativeDeclaration(control);
   const base = new URL(baseUrl);
   assertUrl(baseUrl);
   if (base.search) throw new Error("Artifact base URL cannot contain a query");

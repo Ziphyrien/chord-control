@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFacetHost, defineFacet } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { ControlHost, PluginUi } from "../sdk/index.ts";
+import { ControlHost, PluginNative, PluginUi } from "../sdk/index.ts";
 import { PluginDiagnostics } from "../sdk/diagnostics.ts";
 import { PasswordPrompt } from "../packages/contracts/password.ts";
 import browserFacet from "../plugins/study-guard/src/worker.ts";
@@ -101,6 +101,18 @@ async function fixture(t) {
               async log() {},
               async present() {},
             });
+            if (kind === "wallpaper")
+              env.provide(PluginNative, {
+                async call(asset, request) {
+                  assert.equal(asset, "native/chord-wallpaper.exe");
+                  assert(request && typeof request === "object" && !Array.isArray(request));
+                  return {
+                    format: 1,
+                    ok: true,
+                    value: await h.native(request.operation, request.input),
+                  };
+                },
+              });
             if (kind === "browser")
               env.provide(PasswordPrompt, { authorize: (...args) => h.authorize(...args) });
           },

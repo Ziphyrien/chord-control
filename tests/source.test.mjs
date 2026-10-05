@@ -60,7 +60,7 @@ test(
     await h.start();
     const release = await h.fixture();
     await h.add(release);
-    const tampered = { ...release, permissions: ["registry-current-user"] };
+    const tampered = { ...release, permissions: ["native-asset"] };
     h.routes.set(`/${release.id}.json`, Buffer.from(JSON.stringify(tampered)));
     const result = await h.command({ type: "check_updates" });
     assert.equal(result.failures, 1);

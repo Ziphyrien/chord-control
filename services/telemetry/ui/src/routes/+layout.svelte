@@ -3,8 +3,8 @@
   import { onDestroy } from "svelte";
   import { afterNavigate, beforeNavigate } from "$app/navigation";
   import { page } from "$app/state";
-  import { createClient } from "$lib/client.js";
-  import { setTelemetry } from "$lib/context.js";
+  import { createClient } from "#lib/client.js";
+  import { setTelemetry } from "#lib/context.js";
   import "@chord-control/ui/theme.css";
   import "../app.css";
 
@@ -22,13 +22,22 @@
     },
     session: client.session,
   });
-  afterNavigate(() => {
-    void client.route({ id: page.params.id ?? null, query: page.url.searchParams.get("q") ?? "" });
+
+  afterNavigate(({ shallow }) => {
+    if (shallow) return;
+
+    void client.route({
+      id: page.params.id ?? null,
+      query: page.url.searchParams.get("q") ?? "",
+    });
   });
-  beforeNavigate(({ from, to }) => {
+
+  beforeNavigate(({ from, to, shallow }) => {
+    if (shallow) return;
     if (!to || from?.url.pathname !== to.url.pathname || from?.url.search !== to.url.search)
       client.cancel();
   });
+
   onDestroy(() => client.dispose());
   function login(event) {
     event.preventDefault();
@@ -54,10 +63,8 @@
   {#if state.authenticated}
     <section id="workspace">
       <div class="toolbar">
-        <a href={resolve("/devices")}>设备列表</a><button
-          id="logout"
-          onclick={() => client.logout()}>退出</button
-        >
+        <a href={resolve("devices")}>设备列表</a>
+        <button id="logout" onclick={() => client.logout()}>退出</button>
       </div>
       {@render children()}
     </section>

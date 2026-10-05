@@ -4,8 +4,8 @@
   import { page } from "$app/state";
   import Modal from "@chord-control/ui/Modal.svelte";
   import Select from "@chord-control/ui/Select.svelte";
-  import { getTelemetry } from "$lib/context.js";
-  import { date, deviceName } from "$lib/format.js";
+  import { getTelemetry } from "#lib/context.js";
+  import { date, deviceName } from "#lib/format.js";
 
   const telemetry = getTelemetry();
   let query = $derived(page.url.searchParams.get("q") ?? "");
@@ -24,10 +24,11 @@
   async function search(event) {
     event.preventDefault();
     const url = new URL(page.url);
+
     if (query) url.searchParams.set("q", query);
     else url.searchParams.delete("q");
     if (url.search === page.url.search) await telemetry.session.list(query);
-    else await goto(resolve(`/devices${url.search}`));
+    else await goto(resolve(`devices${url.search}`));
   }
   function trust() {
     const device = confirmation;
@@ -64,7 +65,9 @@
         </p>
         <span class="badge">{device.trusted ? "已确认客户端" : "待确认客户端 · 尚未记录历史"}</span>
       </div>
-      <a href={resolve(`/devices/${encodeURIComponent(device.id)}${page.url.search}`)}>查看</a>
+
+      <a href={resolve(`devices/${encodeURIComponent(device.id)}${page.url.search}`)}>查看</a>
+
       <button
         onclick={() => {
           confirmation = device;

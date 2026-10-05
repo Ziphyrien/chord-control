@@ -5,13 +5,18 @@
   import { resolve } from "$app/paths";
   import Workspace from "../components/Workspace.svelte";
   import { ControllerSession } from "../lib/session.ts";
-  import { createPlatform } from "$platform";
+  import { createPlatform } from "#platform";
   import "../app.css";
 
   let { children }: { children: Snippet } = $props();
   const { client, desktop } = createPlatform();
   const session = new ControllerSession(client, desktop);
-  afterNavigate(() => session.closePanel());
+
+  afterNavigate(({ shallow }) => {
+    if (shallow) return;
+
+    return session.closePanel();
+  });
 </script>
 
 <svelte:head><title>Chord Control</title></svelte:head>
@@ -19,7 +24,8 @@
   {session}
   currentPath={page.url.pathname}
   onnavigate={(path) => {
-    void goto(resolve(path));
+    const pathname = path === "/" ? "" : path.slice(1);
+    void goto(resolve(pathname));
   }}
   {children}
 />

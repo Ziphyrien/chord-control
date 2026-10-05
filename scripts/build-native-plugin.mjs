@@ -12,7 +12,8 @@ export async function buildNativePlugin({ manifest, bundleDir, declaration, id }
   if (
     !/^[a-z][a-z0-9-]{0,63}$/.test(declaration.binary ?? "") ||
     typeof declaration.asset !== "string" ||
-    !declaration.asset.endsWith(".exe")
+    !declaration.asset.startsWith("native/") ||
+    !declaration.asset.toLowerCase().endsWith(".exe")
   )
     throw new Error("Invalid native plugin declaration");
   const destination = safePath(bundleDir, declaration.asset);

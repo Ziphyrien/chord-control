@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
-      "paths": { "$platform": ["src/lib/platform.ts"] },
+      "paths": { "#platform": ["src/lib/platform.ts"] },
       "entry": [
         "src/routes/**/+*.{ts,svelte}",
         "src/lib/platform.ts",

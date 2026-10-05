@@ -8,6 +8,6 @@
     "./password": "./password.ts"
   },
   "peerDependencies": {
-    "@earendil-works/chord": "0.86.1"
+    "@earendil-works/chord": "1.0.2"
   }
 }

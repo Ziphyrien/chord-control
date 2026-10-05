@@ -4,10 +4,6 @@ import { jsonValue, object, message } from "../../../shared/validation.ts";
 
 const grants: Readonly<Record<string, string>> = {
   "diagnostics.snapshot": "diagnostics",
-  "registry.read": "registry-current-user",
-  "registry.write": "registry-current-user",
-  "wallpaper.get": "wallpaper",
-  "wallpaper.set": "wallpaper",
   "process.list": "process-control",
   "process.spawn": "process-control",
   "process.terminate": "process-control",

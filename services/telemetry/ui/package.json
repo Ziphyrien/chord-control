@@ -2,6 +2,9 @@
   "name": "@chord-control/telemetry-dashboard",
   "private": true,
   "type": "module",
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  },
   "scripts": {
     "dev": "vp dev",
     "build": "vp build && node build-static.mjs",
@@ -10,12 +13,13 @@
   },
   "dependencies": {
     "@chord-control/ui": "workspace:*",
-    "svelte": "^5.57.0"
+    "svelte": "^5.57.1"
   },
   "devDependencies": {
     "@chord-control/kit": "workspace:*",
-    "@sveltejs/kit": "^2.70.3",
+    "@sveltejs/kit": "^3.0.0",
     "svelte-check": "^4.7.6",
+    "vite": "catalog:",
     "vite-plus": "catalog:"
   }
 }

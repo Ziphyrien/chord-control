@@ -1,6 +1,6 @@
 import { defineFacet } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
-import { ControlHost, PluginUi } from "../../../sdk/index.ts";
+import { ControlHost, PluginNative, PluginUi } from "../../../sdk/index.ts";
 import { HostDiagnostics, PluginDiagnostics } from "../../../sdk/diagnostics.ts";
 import type { Json } from "../../../shared/protocol.ts";
 import { message, object } from "../../../shared/validation.ts";
@@ -11,10 +11,11 @@ export default defineFacet({
   id: "com.chord.telemetry.worker",
   setup(env) {
     const host = env.use(ControlHost),
+      native = env.use(PluginNative),
       diagnostics = env.use(HostDiagnostics);
     let reporter: Reporter | undefined;
     env.onActivate(async () => {
-      const { dataDir, bundleDir } = await host.paths(BACKGROUND_CONTEXT);
+      const { dataDir } = await host.paths(BACKGROUND_CONTEXT);
       reporter = new Reporter(
         dataDir,
         async (signal) => {
@@ -26,7 +27,7 @@ export default defineFacet({
           }
           return {
             ...(object(snapshot) ? snapshot : { error: "宿主诊断未返回对象" }),
-            windows: await collectWindows(bundleDir, snapshot, signal),
+            windows: await collectWindows(native, snapshot, signal),
           };
         },
         (text) => host.log(text, BACKGROUND_CONTEXT),

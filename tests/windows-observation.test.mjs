@@ -1,7 +1,16 @@
-import { test } from "vite-plus/test";
+import { test, vi } from "vite-plus/test";
 import assert from "node:assert/strict";
 import { observationRequest, collectWindows } from "../plugins/telemetry/src/windows.ts";
 import { isTelemetryReport } from "../shared/telemetry.ts";
+
+const native = {
+  calls: 0,
+  async call(_asset, _input, context) {
+    this.calls++;
+    context.abortSignal.throwIfAborted();
+    throw Object.assign(new Error("native helper unavailable"), { code: "ENOENT" });
+  },
+};
 
 function event(n, changes = {}) {
   return {
@@ -86,12 +95,18 @@ test("event correlation uses the original failure time and never substitutes col
     );
 });
 
-test("collector missing or cancelled is an explicit failure and can still form an accepted report", async () => {
-  const windows = await collectWindows("Z:/missing-plugin-test", {}, new AbortController().signal);
+test("collector missing or cancelled is an explicit failure and can still form an accepted report", async (t) => {
+  vi.stubGlobal("process", { ...process, platform: "win32" });
+  t.onTestFinished(() => vi.unstubAllGlobals());
+  const windows = await collectWindows(native, {}, new AbortController().signal);
   assert.equal(windows.ok, false);
-  assert.equal(typeof windows.error, "string");
-  const cancelled = await collectWindows("Z:/missing-plugin-test", {}, AbortSignal.abort());
+  assert.equal(windows.stage, "launch");
+  assert.equal(windows.code, "ENOENT");
+  assert.equal(native.calls, 1);
+  const cancelled = await collectWindows(native, {}, AbortSignal.abort());
   assert.equal(cancelled.ok, false);
+  assert.match(cancelled.error, /abort/i);
+  assert.equal(native.calls, 1);
   assert.equal(
     isTelemetryReport({
       format: 1,

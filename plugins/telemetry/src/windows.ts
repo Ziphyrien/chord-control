@@ -1,5 +1,5 @@
-import { execFile } from "node:child_process";
-import { join } from "node:path";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
+import type { PluginNativeService } from "../../../sdk/index.ts";
 import type { Json } from "../../../shared/protocol.ts";
 import { message, object } from "../../../shared/validation.ts";
 import {
@@ -11,6 +11,8 @@ import {
 type Request = WindowsObservationRequest;
 type ProcessProbe = Request["processes"][number];
 type RegistryProbe = Request["registry"][number];
+const ASSET = "native/chord-observer.exe";
+
 const validPid = (pid: unknown): pid is number =>
   typeof pid === "number" && Number.isInteger(pid) && pid > 0 && pid <= 0xffffffff;
 const validBirth = (birth: unknown): birth is string =>
@@ -79,7 +81,7 @@ export function observationRequest(host: Json): Request {
 
 /** Child process has no shell, bounded output, deadline and cancellation tied to plugin disposal. */
 export async function collectWindows(
-  bundleDir: string,
+  native: Pick<PluginNativeService, "call">,
   host: Json,
   signal: AbortSignal,
 ): Promise<Json> {
@@ -87,33 +89,13 @@ export async function collectWindows(
   if (process.platform !== "win32")
     return { ok: false, stage: "platform", error: "Windows 采集器仅支持 Windows", observedAt };
   let stage = "launch";
-  let closed: Promise<void> | undefined;
   try {
     signal.throwIfAborted();
     const request = observationRequest(host);
     const input = JSON.stringify(request);
     if (Buffer.byteLength(input) > 32768) throw new Error("Windows 采集请求过大");
-    const output = await new Promise<string>((resolve, reject) => {
-      const child = execFile(
-        join(bundleDir, "native/chord-observer.exe"),
-        [],
-        {
-          windowsHide: true,
-          timeout: 10_000,
-          maxBuffer: 64 * 1024,
-          encoding: "utf8",
-          signal,
-        },
-        (error, stdout) => (error ? reject(error) : resolve(stdout)),
-      );
-      // AbortError can arrive before Windows releases the executable image.
-      closed = new Promise<void>((done) => child.once("close", () => done()));
-      // A child exiting before it reads stdin may report EPIPE. Keep it in the same outcome.
-      child.stdin?.on("error", reject);
-      child.stdin?.end(input);
-    });
+    const value = await native.call(ASSET, request, withAbortSignal(signal, BACKGROUND_CONTEXT));
     stage = "protocol";
-    const value: unknown = JSON.parse(output);
     return { ok: true, value: projectWindowsResponse(value, request) };
   } catch (error) {
     return {
@@ -126,7 +108,5 @@ export async function collectWindows(
           : null,
       observedAt,
     };
-  } finally {
-    await closed;
   }
 }

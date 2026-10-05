@@ -19,7 +19,12 @@ export interface LifecycleService {
   before(action: string, input: JsonValue, context: Context): Promise<boolean>;
 }
 
+export interface PluginNativeService {
+  call(asset: string, input: JsonValue, context: Context): Promise<JsonValue>;
+}
+
 export const ControlHost = defineService<HostService>("chord-control.host");
+export const PluginNative = defineService<PluginNativeService>("chord-control.native-asset");
 export const PluginUi = defineService<UiService>("chord-control.ui");
 export const Lifecycle = defineService<LifecycleService>("chord-control.lifecycle");
 /** Symbol registry identity survives independently bundled Chord contracts. */

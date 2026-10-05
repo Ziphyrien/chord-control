@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { setImmediate } from "node:timers/promises";
-import { collectWindows } from "../plugins/telemetry/src/windows.ts";
+import { runNativeAsset } from "../controller/src/infrastructure/native-assets.ts";
 
 const launch = vi.hoisted(() => ({ run: undefined }));
 vi.mock("node:child_process", async (importOriginal) => {
@@ -12,7 +12,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 for (const failure of ["cancellation", "stdin failure"]) {
-  test(`collector retains ownership until the child closes after ${failure}`, async (t) => {
+  test(`native asset runner retains ownership until the child closes after ${failure}`, async (t) => {
     vi.stubGlobal("process", { ...process, platform: "win32" });
     t.onTestFinished(() => {
       launch.run = undefined;
@@ -26,17 +26,23 @@ for (const failure of ["cancellation", "stdin failure"]) {
       options.signal.addEventListener(
         "abort",
         () => {
-          callback(Object.assign(new Error("Collector cancelled"), { code }), "");
+          callback(Object.assign(new Error("Native asset cancelled"), { code }), "");
         },
         { once: true },
       );
       return child;
     };
     let settled = false;
-    const collecting = collectWindows("test-bundle", {}, controller.signal).then((result) => {
-      settled = true;
-      return result;
-    });
+    const collecting = runNativeAsset("test-bundle", "native/test.exe", {}, controller.signal).then(
+      () => {
+        settled = true;
+        throw new Error("native asset unexpectedly succeeded");
+      },
+      (error) => {
+        settled = true;
+        return error;
+      },
+    );
     try {
       if (failure === "cancellation") controller.abort();
       else child.stdin.emit("error", Object.assign(new Error("Input pipe closed"), { code }));
@@ -49,9 +55,9 @@ for (const failure of ["cancellation", "stdin failure"]) {
     } finally {
       child.emit("close", 1, null);
       child.stdin.destroy();
-      const result = await collecting;
-      assert.equal(result.ok, false);
-      assert.equal(result.code, code);
+      const error = await collecting;
+      assert.equal(error.code, code);
+      assert.match(error.message, /原生插件资产/);
     }
   });
 }

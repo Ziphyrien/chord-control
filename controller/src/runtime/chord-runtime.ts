@@ -13,7 +13,7 @@ import {
   withAbortSignal,
 } from "@earendil-works/chord/context";
 import { createFacetBundleLoader } from "@earendil-works/chord/node";
-import { ControlHost, Lifecycle, PluginUi } from "../../../sdk/index.ts";
+import { ControlHost, Lifecycle, PluginNative, PluginUi } from "../../../sdk/index.ts";
 import {
   HostDiagnostics,
   PluginDiagnostics,
@@ -29,6 +29,7 @@ import { ServiceDirectory } from "./services.ts";
 import { HostKernel } from "../../../sdk/kernel.ts";
 import { KernelCaller, KernelSession } from "./kernel-session.ts";
 import { OperationMetrics } from "../infrastructure/operation-metrics.ts";
+import { runNativeAsset } from "../infrastructure/native-assets.ts";
 
 interface Access {
   phase: "starting" | "active" | "stopping" | "closed";
@@ -122,6 +123,14 @@ export class ChordRuntime implements PluginRuntime {
               if (access.phase === "stopping" || access.phase === "closed") return;
               visible = next;
               if (access.phase === "active") await this.options.present(manifest.id, next);
+            },
+          });
+          env.provide(PluginNative, {
+            call: (asset, input, context) => {
+              if (access.phase === "closed") throw new Error("插件代已停止");
+              if (!manifest.permissions?.includes("native-asset"))
+                throw new Error("插件未声明 native-asset 权限");
+              return runNativeAsset(root, asset, input as Json, context.abortSignal);
             },
           });
           env.provide(HostDiagnostics, {

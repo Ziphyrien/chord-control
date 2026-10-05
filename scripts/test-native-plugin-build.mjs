@@ -8,11 +8,13 @@ import { setTimeout } from "node:timers/promises";
 import { buildNativePlugin } from "./build-native-plugin.mjs";
 
 // Compare against the exact native asset produced for the signed catalogue.
-const directory = resolve("plugins/telemetry");
+const pluginId = process.argv[2] ?? "com.chord.telemetry";
+if (!/^com\.chord\.[a-z0-9-]+$/.test(pluginId)) throw new Error(`Invalid plugin id: ${pluginId}`);
+const directory = resolve("plugins", pluginId.slice("com.chord.".length));
 const pkg = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
 const declaration = pkg.control.native;
 const manifest = join(directory, declaration.manifest);
-const targetDir = resolve("build/plugin-native", pkg.name);
+const targetDir = resolve("build/plugin-native", pluginId);
 const binary = join(targetDir, "x86_64-pc-windows-msvc/release", `${declaration.binary}.exe`);
 const previous = await readFile(binary);
 const bundleDir = await mkdtemp(join(tmpdir(), "chord-native-rebuild-"));

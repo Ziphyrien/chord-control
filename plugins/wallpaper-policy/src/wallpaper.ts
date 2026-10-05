@@ -1,10 +1,10 @@
+import type { Context } from "@earendil-works/chord";
 import { stat, rm } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { LegacyMigration } from "./migration.ts";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { HostService } from "../../../sdk/index.ts";
 import type { Json } from "../../../shared/protocol.ts";
+import type { WallpaperNative } from "./native.ts";
 import {
   POLICY_KEYS,
   parseRaw,
@@ -50,7 +50,7 @@ function controlledWallpaper(saved: Backup, current: string): boolean {
 /** Write-ahead transactions retain the first original through migration, crash and retry. */
 export class WallpaperPolicy {
   private readonly owner = randomUUID();
-  private readonly host: HostService;
+  private readonly native: WallpaperNative;
   private readonly directory: string;
   private readonly backupPath: string;
   private readonly leasePath: string;
@@ -58,39 +58,44 @@ export class WallpaperPolicy {
   private readonly systemRoot: () => string | undefined;
   private readonly migration: LegacyMigration;
   constructor(
-    host: HostService,
+    native: WallpaperNative,
     directory: string,
     systemRoot = () => process.env.SystemRoot ?? process.env.WINDIR,
   ) {
     this.migration = new LegacyMigration(directory);
     this.systemRoot = systemRoot;
-    this.host = host;
+    this.native = native;
     this.directory = directory;
     this.backupPath = join(directory, "wallpaper-native-backup.json");
     this.leasePath = join(directory, "wallpaper-policy-owner.txt");
     this.legacyPath = join(directory, "wallpaper-policy-backup.json");
   }
-  private call(operation: string, input: Json = null) {
-    return this.host.native(operation, input, BACKGROUND_CONTEXT);
+  private call(operation: string, input: Json = null, context?: Context) {
+    return this.native.native(operation, input, context);
   }
   async owns(): Promise<boolean> {
     return (await optionalText(this.leasePath)) === this.owner && (await this.migration.owns());
   }
-  private async readEntry(entry: Pick<PolicyEntry, "path" | "name">): Promise<RawValue> {
-    return parseRaw(await this.call("registry.read", { path: entry.path, name: entry.name }));
+  private async readEntry(
+    entry: Pick<PolicyEntry, "path" | "name">,
+    context?: Context,
+  ): Promise<RawValue> {
+    return parseRaw(
+      await this.call("registry.read", { path: entry.path, name: entry.name }, context),
+    );
   }
-  private async writeEntry(entry: PolicyEntry, value: RawValue): Promise<void> {
-    await this.call("registry.write", { path: entry.path, name: entry.name, value });
+  private async writeEntry(entry: PolicyEntry, value: RawValue, context?: Context): Promise<void> {
+    await this.call("registry.write", { path: entry.path, name: entry.name, value }, context);
   }
-  private async wallpaper(): Promise<string> {
-    const value = await this.call("wallpaper.get");
+  private async wallpaper(context?: Context): Promise<string> {
+    const value = await this.call("wallpaper.get", null, context);
     if (typeof value !== "string") throw new Error("无法读取当前壁纸");
     return value;
   }
   private save(saved: Backup): Promise<void> {
     return this.migration.publish(JSON.stringify(saved));
   }
-  async apply(): Promise<void> {
+  async apply(context?: Context): Promise<void> {
     const target = await stockWallpaper(this.systemRoot());
     await withJournalLock(this.directory, () =>
       this.migration.run(true, this.owner, async (imported) => {
@@ -105,11 +110,11 @@ export class WallpaperPolicy {
               ? parseBackup(legacyText, true)
               : undefined;
         const previousLease = await optionalText(this.leasePath);
-        const beforeWallpaper = await this.wallpaper();
+        const beforeWallpaper = await this.wallpaper(context);
         const values = policyValues(target);
         const entries: PolicyEntry[] = [];
         for (const [index, [path, name]] of POLICY_KEYS.entries()) {
-          const current = await this.readEntry({ path, name });
+          const current = await this.readEntry({ path, name }, context);
           const old = previous?.entries.find((entry) => entry.path === path && entry.name === name);
           const managed = !old || controlled(old, current, previous!.phase);
           entries.push({
@@ -143,15 +148,16 @@ export class WallpaperPolicy {
           await atomicText(this.leasePath, this.owner);
           for (const entry of entries) {
             if (!entry.managed || sameValue(entry.prior!, entry.installed)) continue;
-            if (!sameValue(await this.readEntry(entry), entry.prior!))
+            if (!sameValue(await this.readEntry(entry, context), entry.prior!))
               throw new Error("壁纸策略已被外部修改");
             attempted.push(entry);
-            await this.writeEntry(entry, entry.installed);
+            await this.writeEntry(entry, entry.installed, context);
           }
           if (wallpaperManaged && beforeWallpaper !== target) {
-            if ((await this.wallpaper()) !== beforeWallpaper) throw new Error("壁纸已被外部修改");
+            if ((await this.wallpaper(context)) !== beforeWallpaper)
+              throw new Error("壁纸已被外部修改");
             wallpaperAttempted = true;
-            await this.call("wallpaper.set", { path: target });
+            await this.call("wallpaper.set", { path: target }, context);
           }
           saved.phase = "active";
           await this.save(saved);
@@ -159,15 +165,15 @@ export class WallpaperPolicy {
           const failures: unknown[] = [];
           for (const entry of attempted.reverse()) {
             try {
-              if (sameValue(await this.readEntry(entry), entry.installed))
-                await this.writeEntry(entry, entry.prior!);
+              if (sameValue(await this.readEntry(entry, context), entry.installed))
+                await this.writeEntry(entry, entry.prior!, context);
             } catch (failure) {
               failures.push(failure);
             }
           }
           try {
-            if (wallpaperAttempted && (await this.wallpaper()) === target)
-              await this.call("wallpaper.set", { path: beforeWallpaper });
+            if (wallpaperAttempted && (await this.wallpaper(context)) === target)
+              await this.call("wallpaper.set", { path: beforeWallpaper }, context);
           } catch (failure) {
             failures.push(failure);
           }
@@ -182,24 +188,26 @@ export class WallpaperPolicy {
       }),
     );
   }
-  async measure(): Promise<{ checks: number; passed: number; owned: boolean; errors: string[] }> {
+  async measure(
+    context?: Context,
+  ): Promise<{ checks: number; passed: number; owned: boolean; errors: string[] }> {
     const target = await stockWallpaper(this.systemRoot());
     const values = policyValues(target),
       errors: string[] = [];
     let passed = 0;
     if (
-      (await this.wallpaper()).replaceAll("/", "\\").toLowerCase() ===
+      (await this.wallpaper(context)).replaceAll("/", "\\").toLowerCase() ===
       target.replaceAll("/", "\\").toLowerCase()
     )
       passed++;
     else errors.push("wallpaper.current_mismatch");
     for (const [index, [path, name]] of POLICY_KEYS.entries()) {
-      if (sameValue(await this.readEntry({ path, name }), values[index])) passed++;
+      if (sameValue(await this.readEntry({ path, name }, context), values[index])) passed++;
       else errors.push(`policy.${name}.mismatch`);
     }
     return { checks: 1 + POLICY_KEYS.length, passed, owned: await this.owns(), errors };
   }
-  async restore(): Promise<void> {
+  async restore(context?: Context): Promise<void> {
     await withJournalLock(this.directory, () =>
       this.migration.run(false, this.owner, async () => {
         if (!(await this.owns())) return;
@@ -212,27 +220,27 @@ export class WallpaperPolicy {
         const failures: unknown[] = [];
         for (const entry of saved.entries) {
           try {
-            const current = await this.readEntry(entry);
+            const current = await this.readEntry(entry, context);
             if (controlled(entry, current, phase) && !sameValue(current, entry.original))
-              await this.writeEntry(entry, entry.original);
+              await this.writeEntry(entry, entry.original, context);
           } catch (error) {
             failures.push(error);
           }
         }
         try {
-          const current = await this.wallpaper();
+          const current = await this.wallpaper(context);
           if (
             controlledWallpaper({ ...saved, phase }, current) &&
             current !== saved.originalWallpaper
           )
-            await this.call("wallpaper.set", { path: saved.originalWallpaper });
+            await this.call("wallpaper.set", { path: saved.originalWallpaper }, context);
         } catch (error) {
           failures.push(error);
         }
         if (failures.length) throw new AggregateError(failures, "壁纸恢复未完成；保留备份以便重试");
-        const references = [await this.wallpaper(), saved.originalWallpaper];
+        const references = [await this.wallpaper(context), saved.originalWallpaper];
         for (const entry of saved.entries) {
-          const raw = await this.readEntry(entry);
+          const raw = await this.readEntry(entry, context);
           if (raw?.type === 1 || raw?.type === 2)
             references.push(Buffer.from(raw.bytes).toString("utf16le").replace(/\0+$/, ""));
         }

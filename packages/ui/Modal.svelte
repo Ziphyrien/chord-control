@@ -36,7 +36,7 @@
         if (opener?.isConnected) opener.focus();
       }}
     >
-      <div class="cc-modal-heading">
+      <div class="heading">
         <Dialog.Title class="cc-modal-title" level={2}>{title}</Dialog.Title>
         <Dialog.Close class="cc-modal-close" aria-label={`关闭${title}`}>关闭</Dialog.Close>
       </div>
@@ -71,7 +71,7 @@
     font: var(--cc-font, 15px/1.6 system-ui, "Segoe UI", sans-serif);
     box-shadow: var(--cc-modal-shadow, 0 24px 90px #0006);
   }
-  .cc-modal-heading {
+  .heading {
     display: flex;
     align-items: center;
     justify-content: space-between;

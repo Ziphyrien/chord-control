@@ -2,11 +2,11 @@
   import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import Disclosure from "@chord-control/ui/Disclosure.svelte";
-  import { getTelemetry } from "$lib/context.js";
-  import { deviceName } from "$lib/format.js";
-  import { reportView } from "$lib/report.js";
-  import DataTable from "$lib/DataTable.svelte";
-  import Diagnostics from "$lib/Diagnostics.svelte";
+  import { getTelemetry } from "#lib/context.js";
+  import { deviceName } from "#lib/format.js";
+  import { reportView } from "#lib/report.js";
+  import DataTable from "#lib/DataTable.svelte";
+  import Diagnostics from "#lib/Diagnostics.svelte";
 
   const telemetry = getTelemetry();
   let result = $derived(
@@ -26,7 +26,8 @@
         void telemetry.session.requestReport();
       }}>立即采集</button
     >
-    <a id="close" href={resolve(`/devices${page.url.search}`)}>返回列表</a>
+
+    <a id="close" href={resolve(`devices${page.url.search}`)}>返回列表</a>
   </div>
   <p id="request-status" role="status">{telemetry.state.requestStatus}</p>
   {#if result && view}
