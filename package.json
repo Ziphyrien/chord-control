@@ -52,7 +52,7 @@
   "dependencies": {
     "@chord-control/ui": "workspace:*",
     "@earendil-works/chord": "1.0.2",
-    "@tauri-apps/api": "^2.12.1",
+    "@tauri-apps/api": "~2.12.1",
     "fflate": "^0.8.3",
     "svelte": "^5.57.1"
   },
@@ -61,7 +61,7 @@
     "@playwright/test": "^1.63.0",
     "@sveltejs/kit": "^3.0.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
-    "@tauri-apps/cli": "^2.12.1",
+    "@tauri-apps/cli": "~2.12.1",
     "@types/node": "^26.6.4",
     "@typescript/native": "npm:typescript@7",
     "apca-w3": "^0.1.9",
