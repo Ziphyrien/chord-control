@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "./palette.css";
   import type { Snippet } from "svelte";
 
   let {
@@ -34,7 +35,7 @@
     max-width: var(--cc-page-width, 720px);
     margin-inline: auto;
     padding: clamp(20px, 5vw, 40px);
-    color: var(--cc-text, #272b29);
+    color: var(--cc-text);
     font: var(--cc-font, 15px/1.6 system-ui, sans-serif);
   }
   header {
@@ -54,7 +55,7 @@
   }
   p {
     margin: 10px 0 0;
-    color: var(--cc-muted, #626964);
+    color: var(--cc-muted);
   }
   .actions {
     display: flex;

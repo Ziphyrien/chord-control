@@ -1,6 +1,6 @@
 {
   "name": "com.chord.telemetry",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "private": true,
   "description": "默认仅汇报运行摘要，系统权限及关联审计诊断由用户按需采集",
   "type": "module",

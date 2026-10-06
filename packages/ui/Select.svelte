@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "./palette.css";
   import { Select } from "bits-ui";
 
   let {
@@ -48,19 +49,19 @@
     max-width: 100%;
     min-height: 38px;
     padding: 8px 14px;
-    border: 1px solid var(--cc-border, #daddd9);
+    border: 1px solid var(--cc-border);
     border-radius: var(--cc-radius, 10px);
-    background: var(--cc-control-surface, var(--cc-surface, #fff));
-    color: var(--cc-text, #272b29);
+    background: var(--cc-control-surface);
+    color: var(--cc-text);
     font: var(--cc-font, 15px/1.6 system-ui, "Segoe UI", sans-serif);
     cursor: pointer;
   }
   :global(button.cc-select-trigger:hover) {
-    background: var(--cc-accent, #e7eee7);
-    border-color: var(--cc-focus, #476c53);
+    background: var(--cc-accent);
+    border-color: var(--cc-focus);
   }
   :global(.cc-select-trigger:focus-visible) {
-    outline: 2px solid var(--cc-focus, #476c53);
+    outline: 2px solid var(--cc-focus);
     outline-offset: 3px;
   }
   .label {
@@ -79,12 +80,12 @@
     max-height: var(--bits-select-content-available-height);
     overflow-y: auto;
     padding: 4px;
-    border: 1px solid var(--cc-border, #daddd9);
+    border: 1px solid var(--cc-border);
     border-radius: var(--cc-radius, 10px);
-    background: var(--cc-surface, #fff);
-    color: var(--cc-text, #272b29);
+    background: var(--cc-surface);
+    color: var(--cc-text);
     font: var(--cc-font, 15px/1.6 system-ui, "Segoe UI", sans-serif);
-    box-shadow: var(--cc-popover-shadow, 0 8px 24px #0005);
+    box-shadow: var(--cc-popover-shadow);
   }
   :global(.cc-select-option) {
     display: flex;
@@ -98,10 +99,10 @@
     overflow-wrap: anywhere;
   }
   :global(.cc-select-option[data-highlighted]) {
-    background: var(--cc-accent, #e7eee7);
+    background: var(--cc-accent);
   }
   .check {
     flex: 0 0 16px;
-    color: var(--cc-focus, #476c53);
+    color: var(--cc-focus);
   }
 </style>

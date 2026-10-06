@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "./palette.css";
   let {
     id,
     items,
@@ -23,10 +24,10 @@
   dl {
     margin: 0;
     padding: 4px 20px;
-    border: 1px solid var(--cc-border, #daddd9);
+    border: 1px solid var(--cc-border);
     border-radius: var(--cc-radius, 10px);
-    background: var(--cc-surface, #fff);
-    color: var(--cc-text, #272b29);
+    background: var(--cc-surface);
+    color: var(--cc-text);
     font: var(--cc-font, 15px/1.6 system-ui, sans-serif);
   }
   div {
@@ -36,10 +37,10 @@
     padding-block: 12px;
   }
   div + div {
-    border-top: 1px solid var(--cc-border, #daddd9);
+    border-top: 1px solid var(--cc-border);
   }
   dt {
-    color: var(--cc-muted, #626964);
+    color: var(--cc-muted);
   }
   dd {
     margin: 0;

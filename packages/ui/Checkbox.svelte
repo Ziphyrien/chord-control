@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "./palette.css";
   import { Checkbox } from "bits-ui";
 
   const uid = $props.id();
@@ -40,7 +41,7 @@
     align-items: center;
     gap: 10px;
     margin-bottom: 24px;
-    color: var(--cc-text, #272b29);
+    color: var(--cc-text);
     font: var(--cc-font, 15px/1.6 system-ui, "Segoe UI", sans-serif);
     font-size: 13px;
   }
@@ -56,24 +57,24 @@
     height: 19px;
     min-height: 19px;
     padding: 0;
-    border: 1px solid var(--cc-border, #daddd9);
+    border: 1px solid var(--cc-border);
     border-radius: 3px;
-    color: var(--cc-text, #272b29);
-    background: var(--cc-control-surface, var(--cc-surface, #fff));
+    color: var(--cc-text);
+    background: var(--cc-control-surface);
     cursor: pointer;
   }
   :global(button.cc-checkbox-control:hover:not(:disabled)) {
-    background: var(--cc-control-surface, var(--cc-surface, #fff));
-    border-color: var(--cc-focus, #476c53);
+    background: var(--cc-control-surface);
+    border-color: var(--cc-focus);
   }
   :global(button.cc-checkbox-control[data-state="checked"]),
   :global(button.cc-checkbox-control[data-state="checked"]:hover:not(:disabled)) {
-    color: var(--cc-checked-text, var(--cc-surface, #fff));
-    background: var(--cc-focus, #476c53);
-    border-color: var(--cc-focus, #476c53);
+    color: var(--cc-checked-text);
+    background: var(--cc-fill);
+    border-color: var(--cc-fill);
   }
   :global(button.cc-checkbox-control:focus-visible) {
-    outline: 2px solid var(--cc-focus, #476c53);
+    outline: 2px solid var(--cc-focus);
     outline-offset: 3px;
   }
   :global(button.cc-checkbox-control:disabled) {

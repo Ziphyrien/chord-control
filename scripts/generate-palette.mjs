@@ -1,123 +1,186 @@
-// APCA targets below are design checks, not WCAG conformance ratings.
+// APCA Lc targets are design checks, not WCAG conformance ratings.
+import { BackgroundColor, Color, Theme, convertColorValue } from "@adobe/leonardo-contrast-colors";
 import { calcAPCA } from "apca-w3";
-import { converter, formatHex, toGamut } from "culori";
+import { converter, formatHex } from "culori";
 import { readFile, writeFile } from "node:fs/promises";
 
-const toOklch = converter("oklch");
-const rgbGamut = toGamut("rgb");
-const seeds = { neutral: "#6d7c72", green: "#769b6a", red: "#c36761", amber: "#b58b43" };
+// Achromatic surfaces with a restrained copper brand, not a colored dark UI.
+const seeds = {
+  neutral: "#808080",
+  primary: "#bc6c34",
+  success: "#497d61",
+  danger: "#ba4b42",
+  warning: "#9a751e",
+  info: "#527690",
+};
+const scales = Object.fromEntries(
+  Object.entries(seeds).map(([name, seed]) => [
+    name,
+    new BackgroundColor({
+      name,
+      colorKeys: [seed],
+      colorSpace: "OKLCH",
+      ratios: [20],
+      output: "HEX",
+    }).backgroundColorScale,
+  ]),
+);
+const shade = (name, lightness) => scales[name][Math.max(1, Math.min(99, Math.round(lightness)))];
+const contrast = (foreground, background) => Math.abs(Number(calcAPCA(foreground, background)));
 
-function tone(seed, lightness) {
-  const base = toOklch(seed);
-  const shift = (lightness - base.l) * 6 * Math.sin(((base.h - 105) * Math.PI) / 90);
-  return formatHex(
-    rgbGamut({
-      mode: "oklch",
-      l: lightness,
-      c: base.c <= 0.0001 ? 0 : base.c * Math.pow(Math.sin(Math.PI * lightness), 0.75),
-      h: base.h === undefined ? undefined : (base.h + shift + 360) % 360,
-    }),
-  );
-}
-
-function contrast(text, background) {
-  return Math.abs(Number(calcAPCA(text, background)));
-}
-
-// Solve against the actual painted background, including dark surfaces.
-function readable(seed, background, target, lightText) {
-  const backgroundL = toOklch(background).l;
-  let low = lightText ? backgroundL : 0;
-  let high = lightText ? 1 : backgroundL;
-  let result = tone(seed, lightText ? 1 : 0);
-  for (let index = 0; index < 24; index++) {
-    const mid = (low + high) / 2;
-    const candidate = tone(seed, mid);
-    const meets = contrast(candidate, background) >= target;
-    if (meets) result = candidate;
-    if (lightText === meets) high = mid;
-    else low = mid;
+// Leonardo generates APCA-targeted foregrounds. Independently verify against the
+// actual painted hex, rather than trusting its rounded HSLuv background alone.
+function readable(name, background, target) {
+  const base = new BackgroundColor({
+    name: "base",
+    colorKeys: [background],
+    colorSpace: "OKLCH",
+    ratios: [20],
+  });
+  const lightness = convertColorValue(background, "HSLuv", true).v;
+  for (const margin of [2, 4, 6]) {
+    const foreground = new Color({
+      name,
+      colorKeys: [seeds[name]],
+      colorSpace: "OKLCH",
+      ratios: { result: target + margin },
+    });
+    const theme = new Theme({
+      colors: [base, foreground],
+      backgroundColor: base,
+      lightness,
+      formula: "wcag3",
+      output: "HEX",
+    });
+    const color = theme.contrastColorPairs.result;
+    if (contrast(color, background) >= target) return color;
   }
-  if (contrast(result, background) < target)
-    throw new Error(`Unreachable APCA target ${target}: ${seed} on ${background}`);
-  return result;
+  throw new Error(`Unreachable APCA Lc ${target}: ${name} on ${background}`);
 }
 
 const checks = [];
 function palette(dark) {
-  const neutral = (light, dim) => tone(seeds.neutral, dark ? dim : light);
-  const surface = neutral(0.996, 0.235);
-  const hover = neutral(0.93, 0.33);
-  const accent = tone(seeds.green, dark ? 0.32 : 0.93);
-  const dangerSurface = tone(seeds.red, dark ? 0.3 : 0.94);
-  const warningSurface = tone(seeds.amber, dark ? 0.31 : 0.94);
-  const fill = readable(seeds.green, hover, 80, dark);
+  const neutral = (light, dim) => shade("neutral", dark ? dim : light);
+  const surface = neutral(99, 14);
+  const hover = neutral(94, 22);
+  const accent = neutral(94, 22);
+  const successSurface = shade("success", dark ? 21 : 95);
+  const dangerSurface = shade("danger", dark ? 21 : 95);
+  const warningSurface = shade("warning", dark ? 21 : 95);
+  const infoSurface = shade("info", dark ? 21 : 95);
+  // A filled control is neutral. Its label needs APCA, not the fill vs page.
+  const fill = readable("neutral", hover, 80);
+  const fillLightness = convertColorValue(fill, "HSLuv", true).v;
+  const onFill = readable("neutral", fill, 78);
+  const shadow = `${shade("neutral", dark ? 2 : 7)}${dark ? "a6" : "40"}`;
   const colors = {
-    background: neutral(0.977, 0.19),
+    background: neutral(97, 9),
     surface,
-    sidebar: neutral(0.955, 0.215),
-    "control-surface": neutral(0.992, 0.28),
-    "input-surface": neutral(0.999, 0.205),
+    sidebar: neutral(95, 11),
+    "control-surface": neutral(98, 17),
+    "input-surface": neutral(99, 12),
     "control-hover": hover,
-    text: readable(seeds.neutral, hover, 90, dark),
-    muted: readable(seeds.neutral, hover, 75, dark),
-    border: neutral(0.83, 0.43),
-    "border-strong": neutral(0.64, 0.58),
+    text: readable("neutral", accent, 90),
+    muted: readable("neutral", accent, 75),
+    border: neutral(82, 38),
+    "border-strong": neutral(61, 55),
     accent,
-    "accent-text": readable(seeds.green, accent, 80, dark),
-    focus: fill,
+    "accent-text": readable("primary", accent, 80),
+    focus: readable("primary", hover, 80),
     fill,
-    "fill-hover": tone(seeds.green, toOklch(fill).l + (dark ? 0.025 : -0.025)),
-    "on-fill": readable(seeds.neutral, fill, 75, !dark),
-    success: readable(seeds.green, accent, 80, dark),
-    danger: readable(seeds.red, dangerSurface, 80, dark),
-    warning: readable(seeds.amber, warningSurface, 80, dark),
-    "success-surface": accent,
+    "fill-hover": shade("neutral", fillLightness + (dark ? 3 : -3)),
+    "on-fill": onFill,
+    success: readable("success", successSurface, 80),
+    danger: readable("danger", dangerSurface, 80),
+    warning: readable("warning", warningSurface, 80),
+    info: readable("info", infoSurface, 80),
+    "success-surface": successSurface,
     "danger-surface": dangerSurface,
     "warning-surface": warningSurface,
-    "checked-text": readable(seeds.neutral, fill, 75, !dark),
-    "switch-track": neutral(0.75, 0.43),
-    "switch-thumb": neutral(1, 0.97),
+    "info-surface": infoSurface,
+    "checked-text": onFill,
+    "switch-track": neutral(73, 38),
+    "switch-thumb": neutral(98, 97),
+    overlay: `${shade("neutral", 3)}c2`,
+    "modal-shadow": `0 24px 90px ${shadow}`,
+    "popover-shadow": `0 8px 24px ${shadow}`,
   };
   for (const [foreground, background, target] of [
     ["text", "background", 90],
     ["text", "surface", 90],
     ["text", "control-hover", 90],
+    ["text", "accent", 90],
+    ["text", "sidebar", 90],
+    ["text", "control-surface", 90],
+    ["text", "input-surface", 90],
     ["muted", "background", 75],
     ["muted", "surface", 75],
     ["muted", "control-hover", 75],
+    ["muted", "accent", 75],
+    ["muted", "sidebar", 75],
+    ["muted", "control-surface", 75],
+    ["muted", "input-surface", 75],
     ["accent-text", "accent", 75],
     ["success", "success-surface", 75],
     ["danger", "danger-surface", 75],
     ["warning", "warning-surface", 75],
+    ["info", "info-surface", 75],
     ["on-fill", "fill", 75],
     ["on-fill", "fill-hover", 75],
   ]) {
     const score = contrast(colors[foreground], colors[background]);
     if (score < target)
       throw new Error(
-        `${dark ? "dark" : "light"} ${foreground}/${background}: ${score} < ${target}`,
+        `${dark ? "dark" : "light"} ${foreground}/${background}: Lc ${score} < ${target}`,
       );
     checks.push({
       theme: dark ? "dark" : "light",
       foreground,
       background,
-      score: Number(score.toFixed(1)),
+      Lc: Number(score.toFixed(1)),
+      target,
     });
   }
   return colors;
 }
-
+const light = palette(false),
+  dark = palette(true);
+// Culori only serializes Leonardo's final sRGB paint into valid CSS OKLCH.
+// It never selects a color or supplies an old palette input.
+const oklch = converter("oklch");
+function cssValue(value) {
+  return value.replace(/#[0-9a-f]{6}(?:[0-9a-f]{2})?/gi, (hex) => {
+    const { l, c, h, alpha = 1 } = oklch(hex);
+    return `oklch(${Number((l * 100).toFixed(5))}% ${Number(c.toFixed(6))} ${Number((h ?? 0).toFixed(3))}${alpha < 1 ? ` / ${Number(alpha.toFixed(5))}` : ""})`;
+  });
+}
 const css =
   [
-    "/* Generated by scripts/generate-palette.mjs; edit the seed colors there. */",
-    ...[false, true].map((dark) => {
-      const lines = Object.entries(palette(dark)).map(
-        ([name, value]) => `  --cc-${name}: ${value};`,
-      );
-      return `${dark ? ':root[data-cc-theme="dark"]' : ":root"} {\n  color-scheme: ${dark ? "dark" : "light"};\n${lines.join("\n")}\n}`;
-    }),
+    "/* Adobe Leonardo 1.1.0 / APCA (formula: wcag3). Generated by scripts/generate-palette.mjs. */",
+    ...[
+      [false, light],
+      [true, dark],
+    ].map(
+      ([isDark, colors]) =>
+        `${isDark ? ':root[data-cc-theme="dark"]' : ":root"} {\n  color-scheme: ${isDark ? "dark" : "light"};\n${Object.entries(
+          colors,
+        )
+          .map(([name, value]) => `  --cc-${name}: ${cssValue(value)};`)
+          .join("\n")}\n}`,
+    ),
   ].join("\n") + "\n";
+// Verify the actual serialized OKLCH paint after its round trip to sRGB.
+for (const check of checks) {
+  const colors = check.theme === "dark" ? dark : light;
+  const foreground = formatHex(cssValue(colors[check.foreground]));
+  const background = formatHex(cssValue(colors[check.background]));
+  const score = contrast(foreground, background);
+  if (score < check.target)
+    throw new Error(
+      `CSS OKLCH APCA check failed: ${check.theme} ${check.foreground}/${check.background}`,
+    );
+  check.Lc = Number(score.toFixed(1));
+}
 const output = new URL("../packages/ui/palette.css", import.meta.url);
 if (process.argv.includes("--check")) {
   if ((await readFile(output, "utf8")) !== css)
@@ -125,7 +188,39 @@ if (process.argv.includes("--check")) {
 } else {
   await writeFile(output, css);
 }
+const iconPath = new URL("../resources/icon.svg", import.meta.url);
+const icon = await readFile(iconPath, "utf8");
+const iconColors = { background: dark.background, foreground: shade("primary", 66) };
+const roles = new Set();
+const expectedIcon = icon.replace(
+  /data-cc-paint="(background|foreground)" (fill|stroke)="#[0-9a-f]+"/gi,
+  (_, role, attribute) => {
+    roles.add(role);
+    return `data-cc-paint="${role}" ${attribute}="${iconColors[role]}"`;
+  },
+);
+if (roles.size !== 2) throw new Error("Icon paint roles are missing");
+if (contrast(iconColors.foreground, iconColors.background) < 45)
+  throw new Error("Large icon glyph requires APCA Lc 45");
+const configPath = new URL("../src-tauri/tauri.conf.json", import.meta.url);
+const configText = await readFile(configPath, "utf8");
+const config = JSON.parse(configText);
+const main = config.app.windows.find((window) => window.label === "main");
+if (!main) throw new Error("Main window is not registered");
+if (process.argv.includes("--check")) {
+  if (icon !== expectedIcon || main.backgroundColor !== dark.background)
+    throw new Error("Native/icon colors are stale; run vp run theme:generate");
+} else {
+  await writeFile(iconPath, expectedIcon);
+  await writeFile(
+    configPath,
+    configText.replace(
+      `"backgroundColor": "${main.backgroundColor}"`,
+      `"backgroundColor": "${dark.background}"`,
+    ),
+  );
+}
 console.log(
-  `${checks.length} APCA color pairs verified; lowest text Lc ${Math.min(...checks.map((check) => check.score))}`,
+  `${checks.length} APCA pairs verified; minimum Lc ${Math.min(...checks.map((check) => check.Lc))}`,
 );
 console.table(checks);

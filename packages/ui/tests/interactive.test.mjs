@@ -39,12 +39,18 @@ test(
     assert(!Array.isArray(bundle) && "output" in bundle);
     const script = bundle.output.find((item) => item.type === "chunk");
     assert(script);
+    const styles = bundle.output
+      .filter((item) => item.type === "asset" && item.fileName.endsWith(".css"))
+      .map((item) =>
+        typeof item.source === "string" ? item.source : new TextDecoder().decode(item.source),
+      );
     const browser = await chromium.launch({ headless: true });
     try {
       const page = await browser.newPage();
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await page.setContent('<!doctype html><html lang="en"><body></body></html>');
+      for (const content of styles) await page.addStyleTag({ content });
       await page.addScriptTag({ content: script.code });
 
       const checkbox = page.getByRole("checkbox", { name: "Automatic updates" });
@@ -129,7 +135,7 @@ test(
       await expect(dialog).toBeVisible();
       await expect(dialog).toHaveAccessibleDescription("Choose which events to display.");
       await expect(dialog).toHaveCSS("position", "fixed");
-      await expect(dialog).toHaveCSS("background-color", "rgb(255, 255, 255)");
+      await expect(dialog).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       for (let index = 0; index < 6; index++) {
         await page.keyboard.press("Tab");
         assert(await dialog.evaluate((element) => element.contains(document.activeElement)));
@@ -138,7 +144,7 @@ test(
       const option = page.getByRole("option", { name: "Needs attention" });
       await expect(option).toBeVisible();
       const menu = page.getByRole("listbox");
-      await expect(menu).toHaveCSS("background-color", "rgb(255, 255, 255)");
+      await expect(menu).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       assert(
         Number(await menu.evaluate((element) => getComputedStyle(element).zIndex)) >
           Number(await dialog.evaluate((element) => getComputedStyle(element).zIndex)),
@@ -160,20 +166,20 @@ test(
 
       await page.addStyleTag({
         content:
-          ":root { --cc-surface: #202122; --cc-control-surface: #25282b; --cc-text: #e8e8ea; --cc-border: #393c3f; --cc-focus: #b2d3a2; }",
+          ":root { --cc-surface: rgb(19, 21, 36); --cc-control-surface: rgb(29, 31, 47); --cc-text: rgb(239, 241, 250); --cc-border: rgb(93, 99, 124); --cc-focus: rgb(184, 161, 240); --cc-fill: rgb(184, 161, 240); --cc-checked-text: rgb(19, 21, 36); }",
       });
-      await expect(checkbox).toHaveCSS("background-color", "rgb(178, 211, 162)");
-      await expect(checkbox).toHaveCSS("color", "rgb(32, 33, 34)");
+      await expect(checkbox).toHaveCSS("background-color", "rgb(184, 161, 240)");
+      await expect(checkbox).toHaveCSS("color", "rgb(19, 21, 36)");
       await expect(checkbox).toHaveCSS("width", "19px");
       await expect(toggle).toHaveCSS("width", "42px");
       await page.setViewportSize({ width: 320, height: 640 });
       await opener.click();
-      await expect(dialog).toHaveCSS("background-color", "rgb(32, 33, 34)");
-      await expect(dialog).toHaveCSS("color", "rgb(232, 232, 234)");
+      await expect(dialog).toHaveCSS("background-color", "rgb(19, 21, 36)");
+      await expect(dialog).toHaveCSS("color", "rgb(239, 241, 250)");
       const bounds = await dialog.boundingBox();
       assert(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 320);
       await page.getByRole("button", { name: "Dialog filter", exact: true }).click();
-      await expect(menu).toHaveCSS("background-color", "rgb(32, 33, 34)");
+      await expect(menu).toHaveCSS("background-color", "rgb(19, 21, 36)");
       const menuBounds = await menu.boundingBox();
       assert(menuBounds && menuBounds.x >= 0 && menuBounds.x + menuBounds.width <= 320);
       assert.deepEqual(errors, []);

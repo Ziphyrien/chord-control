@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "./palette.css";
   import type { Snippet } from "svelte";
 
   let {
@@ -25,14 +26,14 @@
 <style>
   .cc-notice {
     min-height: 1.6em;
-    color: var(--cc-muted, #626964);
+    color: var(--cc-muted);
     font: var(--cc-font, 15px/1.6 system-ui, sans-serif);
     overflow-wrap: anywhere;
   }
   .cc-notice[data-tone="success"] {
-    color: var(--cc-success, #356045);
+    color: var(--cc-success);
   }
   .cc-notice[data-tone="error"] {
-    color: var(--cc-danger, #a02d28);
+    color: var(--cc-danger);
   }
 </style>

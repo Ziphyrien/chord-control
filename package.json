@@ -1,6 +1,6 @@
 {
   "name": "chord-control",
-  "version": "0.4.19",
+  "version": "0.4.20",
   "private": true,
   "description": "Windows control center for Chord plugins",
   "workspaces": [
@@ -57,6 +57,7 @@
     "svelte": "^5.57.1"
   },
   "devDependencies": {
+    "@adobe/leonardo-contrast-colors": "1.1.0",
     "@chord-control/kit": "workspace:*",
     "@playwright/test": "^1.63.0",
     "@sveltejs/kit": "^3.0.0",

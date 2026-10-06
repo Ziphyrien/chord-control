@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "./palette.css";
   import { Switch } from "bits-ui";
 
   let {
@@ -35,22 +36,22 @@
     height: 24px;
     min-height: 24px;
     padding: 3px;
-    border: 1px solid var(--cc-border, #daddd9);
+    border: 1px solid var(--cc-border);
     border-radius: 999px;
-    background: var(--cc-switch-track, var(--cc-muted, #626964));
+    background: var(--cc-switch-track);
     cursor: pointer;
   }
   :global(button.cc-switch:hover:not(:disabled)) {
-    background: var(--cc-switch-track, var(--cc-muted, #626964));
-    border-color: var(--cc-focus, #476c53);
+    background: var(--cc-switch-track);
+    border-color: var(--cc-focus);
   }
   :global(button.cc-switch[data-state="checked"]),
   :global(button.cc-switch[data-state="checked"]:hover:not(:disabled)) {
-    background: var(--cc-focus, #476c53);
-    border-color: var(--cc-focus, #476c53);
+    background: var(--cc-fill);
+    border-color: var(--cc-fill);
   }
   :global(button.cc-switch:focus-visible) {
-    outline: 2px solid var(--cc-focus, #476c53);
+    outline: 2px solid var(--cc-focus);
     outline-offset: 3px;
   }
   :global(button.cc-switch:disabled) {
@@ -61,10 +62,11 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: var(--cc-switch-thumb, #fff);
+    background: var(--cc-switch-thumb);
     transform: translateX(0);
   }
   :global(.cc-switch-thumb[data-state="checked"]) {
+    background: var(--cc-on-fill);
     transform: translateX(18px);
   }
 </style>

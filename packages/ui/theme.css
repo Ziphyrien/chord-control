@@ -3,9 +3,6 @@
 :root {
   --cc-radius: 10px;
   --cc-font: 15px/1.6 system-ui, "Segoe UI", sans-serif;
-  --cc-overlay: #060c09b8;
-  --cc-modal-shadow: 0 24px 90px #0006;
-  --cc-popover-shadow: 0 8px 24px #0005;
   --cc-modal-layer: 30;
   --cc-popover-layer: 40;
   background: var(--cc-background);

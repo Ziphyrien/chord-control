@@ -449,7 +449,7 @@ main {
   background: var(--cc-accent);
   border: 1px solid var(--cc-border-strong);
   border-radius: 8px;
-  box-shadow: 0 8px 30px #0005;
+  box-shadow: var(--cc-popover-shadow);
   font-size: 14px;
   z-index: 5;
 }

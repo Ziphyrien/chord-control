@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "./palette.css";
   import { Dialog } from "bits-ui";
   import type { Snippet } from "svelte";
 
@@ -51,7 +52,7 @@
     position: fixed;
     inset: 0;
     z-index: var(--cc-modal-layer, 30);
-    background: var(--cc-overlay, #060c09b8);
+    background: var(--cc-overlay);
   }
   :global(.cc-modal) {
     box-sizing: border-box;
@@ -64,12 +65,12 @@
     max-height: calc(100dvh - 48px);
     overflow: auto;
     padding: 28px;
-    border: 1px solid var(--cc-border, #daddd9);
+    border: 1px solid var(--cc-border);
     border-radius: var(--cc-radius, 10px);
-    color: var(--cc-text, #272b29);
-    background: var(--cc-surface, #fff);
+    color: var(--cc-text);
+    background: var(--cc-surface);
     font: var(--cc-font, 15px/1.6 system-ui, "Segoe UI", sans-serif);
-    box-shadow: var(--cc-modal-shadow, 0 24px 90px #0006);
+    box-shadow: var(--cc-modal-shadow);
   }
   .heading {
     display: flex;
@@ -86,7 +87,7 @@
   }
   :global(.cc-modal-description) {
     margin: 14px 0;
-    color: var(--cc-muted, #626964);
+    color: var(--cc-muted);
     font-size: 14px;
     line-height: 1.65;
     overflow-wrap: anywhere;
@@ -103,11 +104,11 @@
     cursor: pointer;
   }
   :global(button.cc-modal-close:hover) {
-    background: var(--cc-accent, #e7eee7);
-    border-color: var(--cc-focus, #476c53);
+    background: var(--cc-accent);
+    border-color: var(--cc-focus);
   }
   :global(.cc-modal-close:focus-visible) {
-    outline: 2px solid var(--cc-focus, #476c53);
+    outline: 2px solid var(--cc-focus);
     outline-offset: 3px;
   }
   @media (max-width: 640px) {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "./palette.css";
   import { Collapsible } from "bits-ui";
   import type { Snippet } from "svelte";
 
@@ -28,7 +29,7 @@
 <style>
   :global(.cc-disclosure) {
     min-width: 0;
-    color: var(--cc-text, #272b29);
+    color: var(--cc-text);
     font: var(--cc-font, 15px/1.6 system-ui, "Segoe UI", sans-serif);
   }
   :global(button.cc-disclosure-trigger) {
@@ -42,18 +43,18 @@
     border: 1px solid transparent;
     border-radius: var(--cc-radius, 10px);
     background: transparent;
-    color: var(--cc-muted, #626964);
+    color: var(--cc-muted);
     font: inherit;
     text-align: start;
     overflow-wrap: anywhere;
     cursor: pointer;
   }
   :global(button.cc-disclosure-trigger:hover) {
-    background: var(--cc-accent, #e7eee7);
-    border-color: var(--cc-focus, #476c53);
+    background: var(--cc-accent);
+    border-color: var(--cc-focus);
   }
   :global(.cc-disclosure-trigger:focus-visible) {
-    outline: 2px solid var(--cc-focus, #476c53);
+    outline: 2px solid var(--cc-focus);
     outline-offset: 3px;
   }
   svg {
