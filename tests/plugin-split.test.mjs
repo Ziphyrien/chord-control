@@ -214,11 +214,12 @@ test("actual RegCreateKey denial fails only wallpaper activation while browser a
     .map((item) => ({ ...item, version: "0.0.1", artifactSha256: "a".repeat(64) }));
   const app = await applicationFixture(previous.map((item) => registration(item)));
   t.onTestFinished(() => app.service.close());
+  const browserRelease = releases.find((release) => release.id === "com.chord.study-guard");
   let browserHost;
   const activate = app.runtime.activate.bind(app.runtime);
   app.runtime.activate = async (release) => {
     if (release.id === "com.chord.wallpaper-policy") await h.start("wallpaper");
-    if (release.id === "com.chord.study-guard" && release.version === "1.3.0")
+    if (release.id === browserRelease.id && release.version === browserRelease.version)
       browserHost = await h.start("browser");
     await activate(release);
   };

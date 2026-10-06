@@ -1,6 +1,6 @@
 {
   "name": "chord-control",
-  "version": "0.4.18",
+  "version": "0.4.19",
   "private": true,
   "description": "Windows control center for Chord plugins",
   "workspaces": [
