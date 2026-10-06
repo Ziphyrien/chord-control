@@ -80,7 +80,6 @@
     const expected = revision;
     saving = true;
     noteError = "";
-    status = "正在保存…";
     try {
       await call("save_note", value);
       if (active) status = revision === expected ? "已保存" : "此前内容已保存，当前修改尚未保存";
@@ -109,16 +108,10 @@
 </script>
 
 <Page title="系统信息与便笺">
-  {#snippet actions()}<button id="refresh" disabled={loading || reading} onclick={refresh}
-      >{loading || reading ? "正在读取…" : "刷新"}</button
+  {#snippet actions()}<button id="refresh" aria-busy={loading || reading} onclick={refresh}
+      >刷新</button
     >{/snippet}
-  <Facts
-    id="info"
-    live
-    items={facts.length
-      ? facts
-      : [{ label: "系统信息", value: loading ? "正在读取…" : "暂无信息" }]}
-  />
+  <Facts id="info" live items={facts.length ? facts : [{ label: "系统信息", value: "暂无信息" }]} />
   {#if infoError}<Notice tone="error">{infoError}</Notice>{/if}
   <section aria-label="本机便笺">
     <label for="note">本机便笺（最多 10000 字符）</label>
@@ -132,10 +125,10 @@
         status = "尚未保存";
       }}></textarea>
     <div class="actions">
-      <button id="save" disabled={saving || !noteLoaded} onclick={saveNote}
-        >{saving ? "正在保存…" : "保存便笺"}</button
+      <button id="save" disabled={!noteLoaded} aria-busy={saving} onclick={saveNote}
+        >保存便笺</button
       >
-      {#if !noteLoaded}<button disabled={reading} onclick={loadNote}>重试读取便笺</button>{/if}
+      {#if !noteLoaded}<button aria-busy={reading} onclick={loadNote}>重试读取便笺</button>{/if}
     </div>
     <Notice id="status" tone={noteError ? "error" : "neutral"}>{noteError || status}</Notice>
   </section>

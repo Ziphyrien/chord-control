@@ -14,7 +14,7 @@
   let reporting = $state(false);
   let error = $state("");
   let reportError = $state("");
-  let notice = $state("正在读取上报状态…");
+  let notice = $state("");
   let detail = $state<string | null>(null);
   let expanded = $state(false);
   let active = false;
@@ -32,7 +32,11 @@
           { label: "实时连接", value: status.connected ? "已连接" : "未连接" },
           {
             label: "上报状态",
-            value: status.sending ? "正在上报" : status.lastError ? "上次上报失败" : "等待下次上报",
+            value: status.sending
+              ? "上报进行中"
+              : status.lastError
+                ? "上次上报失败"
+                : "等待下次上报",
           },
           {
             label: "上报间隔",
@@ -58,8 +62,6 @@
     if (!active || busy) return;
     busy = true;
     clearTimeout(timer);
-    error = "";
-    notice = method === "send" ? "正在上报…" : "正在读取上报状态…";
     try {
       const value = await call(method);
       if (
@@ -70,10 +72,11 @@
       )
         throw new Error("上报状态读取失败，请重试");
       if (!active) return;
+      error = "";
       status = value;
       if (value.sending) {
         awaitingSend = true;
-        notice = "正在上报…";
+        notice = "上报进行中";
       } else if (value.lastError) {
         error = `上报失败：${value.lastError}`;
         notice = "";
@@ -125,15 +128,16 @@
 </script>
 
 <Page title="运行遥测" description="定期上报运行状态。暂停此插件即可停止上报。">
-  {#snippet actions()}<button disabled={busy} onclick={() => refresh()}>刷新</button>{/snippet}
+  {#snippet actions()}<button aria-busy={busy} onclick={() => refresh()}>刷新</button>{/snippet}
   {#if status}<Facts items={facts} />{/if}
   <div class="actions">
-    <button id="send" disabled={busy || status?.sending === true} onclick={() => refresh("send")}
-      >{busy ? "请稍候…" : "立即上报"}</button
+    <button
+      id="send"
+      disabled={status?.sending === true}
+      aria-busy={busy}
+      onclick={() => refresh("send")}>立即上报</button
     >
-    <button id="report" disabled={reporting} onclick={loadReport}
-      >{reporting ? "正在读取…" : "查看最近报告"}</button
-    >
+    <button id="report" aria-busy={reporting} onclick={loadReport}>查看最近报告</button>
   </div>
   <Notice id="status" tone={error ? "error" : notice === "上报成功" ? "success" : "neutral"}
     >{error || notice}</Notice

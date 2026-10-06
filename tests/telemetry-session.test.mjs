@@ -227,7 +227,7 @@ test("polling stops after 15 attempts without deleting the server pending reques
     const done = h.tick(attempt === 0 ? 1500 : 2000);
     h.calls.at(-1).respond(pending);
     await done;
-    assert.equal(h.state.requestStatus, attempt < 14 ? "正在采集…" : "稍后刷新查看结果");
+    assert.equal(h.state.requestStatus, attempt < 14 ? "采集进行中" : "稍后刷新查看结果");
   }
   assert.equal(h.scheduled.size, 0);
   assert.equal(h.calls.filter((call) => call.path.endsWith("/live")).length, 15);
@@ -324,7 +324,7 @@ test("replacing a collection cancels its pending POST before starting a new time
   assert(oldCall.options.signal.aborted);
   assert.equal(h.states.length, changes);
   assert.equal(h.scheduled.size, 1);
-  assert.equal(h.state.requestStatus, "正在采集…");
+  assert.equal(h.state.requestStatus, "采集进行中");
 });
 
 test("an already queued stale timer cannot hide the current timer from logout cleanup", async () => {
@@ -399,6 +399,8 @@ test(
       holdList = true;
       await page.locator("#close").click();
       const late = await held.promise;
+      await expect(page.locator(".device")).toHaveCount(1);
+      await expect(page.locator("body")).not.toContainText("正在读取…");
       await page.locator("#logout").click();
       await late.fulfill({ json: { devices: [device], receivedAt: 1 } });
       await expect(page.locator("#workspace")).toHaveCount(0);

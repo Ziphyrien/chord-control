@@ -21,7 +21,7 @@
     <h2 id="name">{result ? deviceName(result.device) : "设备详情"}</h2>
     <button
       id="request"
-      disabled={telemetry.state.busy || !result}
+      disabled={!result}
       onclick={() => {
         void telemetry.session.requestReport();
       }}>立即采集</button
@@ -71,7 +71,7 @@
         ><pre id="raw">{JSON.stringify(result.device.report, null, 2)}</pre></Disclosure
       >
     {/key}
-  {:else if telemetry.state.busy}
-    <p role="status">正在读取…</p>
+  {:else}
+    <p role="status">设备详情尚未载入。</p>
   {/if}
 </section>

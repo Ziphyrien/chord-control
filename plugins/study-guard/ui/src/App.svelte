@@ -12,8 +12,8 @@
   ];
   let enabled = $state(false);
   let pending = $state.raw<string[]>([]);
-  let busy = $state(true);
-  let status = $state("正在读取保护状态…");
+  let busy = $state(false);
+  let status = $state("尚未读取保护状态");
   let error = $state("");
   let active = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -40,7 +40,7 @@
         browser && value.requested === true
           ? "请在密保盘中验证"
           : pending.length
-            ? "正在等待密保盘验证"
+            ? "等待密保盘验证"
             : value.last || (enabled ? "浏览器保护已启用" : "浏览器保护未启用");
     } catch (cause) {
       if (active) {
@@ -59,7 +59,6 @@
 
   onMount(() => {
     active = true;
-    busy = false;
     void update();
     return () => {
       active = false;
@@ -72,11 +71,11 @@
   title="浏览器保护"
   description="打开新的浏览器窗口前，请通过密保盘验证。已打开的浏览器可以继续使用。"
 >
-  <div class="browsers" role="group" aria-label="打开浏览器">
+  <div class="browsers" role="group" aria-label="打开浏览器" aria-busy={busy}>
     {#each browsers as browser (browser.id)}
       <button
         data-browser={browser.id}
-        disabled={busy || !enabled || pending.includes(browser.id)}
+        disabled={!enabled || pending.includes(browser.id)}
         onclick={() => update(browser.id)}
         >{browser.name}{pending.includes(browser.id) ? " · 等待验证" : ""}</button
       >

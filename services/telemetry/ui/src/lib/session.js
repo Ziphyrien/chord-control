@@ -89,7 +89,7 @@ export function createSession({
   const devicePath = (id) => `/api/devices/${encodeURIComponent(id)}`;
   async function loadList(scope) {
     const result = await api(scope, `/api/devices?q=${encodeURIComponent(query)}`);
-    if (current(scope)) publish({ authenticated: true, view: "list", list: result });
+    if (current(scope)) publish({ authenticated: true, view: "list", list: result, error: "" });
   }
   function list(nextQuery = query) {
     if (disposed || !token) return Promise.resolve();
@@ -97,7 +97,6 @@ export function createSession({
     const scope = begin({
       selected: null,
       detail: null,
-      list: null,
       view: state.authenticated ? "list" : "login",
     });
     return run(scope, () => loadList(scope));
@@ -111,10 +110,14 @@ export function createSession({
   }
   function detail(id) {
     if (disposed || !token || !state.authenticated) return Promise.resolve();
-    const scope = begin({ selected: id, view: "detail", detail: null, list: null });
+    const scope = begin({
+      selected: id,
+      view: "detail",
+      detail: state.selected === id ? state.detail : null,
+    });
     return run(scope, async () => {
       const result = await api(scope, devicePath(id));
-      if (current(scope)) publish({ detail: result });
+      if (current(scope)) publish({ detail: result, error: "" });
     });
   }
   function setTrust(id, trusted, label) {
@@ -131,7 +134,7 @@ export function createSession({
   function requestReport() {
     const id = state.selected;
     if (disposed || !token || !id || !state.detail) return Promise.resolve();
-    const scope = begin({ requestStatus: "正在采集…" });
+    const scope = begin({});
     let attempts = 0;
     function schedule(delay) {
       if (!current(scope)) return;
@@ -149,7 +152,7 @@ export function createSession({
         const result = await api(scope, devicePath(id));
         if (current(scope)) publish({ detail: result, requestStatus: "采集完成" });
       } else if (attempts < 15) {
-        publish({ requestStatus: next.connected ? "正在采集…" : "等待设备连接" });
+        publish({ requestStatus: next.connected ? "采集进行中" : "等待设备连接" });
         schedule(2000);
       } else {
         publish({ requestStatus: "稍后刷新查看结果" });
@@ -160,7 +163,7 @@ export function createSession({
       async () => {
         const result = await api(scope, `${devicePath(id)}/request-report`, { method: "POST" });
         if (!current(scope)) return;
-        publish({ requestStatus: result.connected ? "正在采集…" : "等待设备连接" });
+        publish({ requestStatus: result.connected ? "采集进行中" : "等待设备连接" });
         schedule(1500);
       },
       true,
@@ -172,7 +175,6 @@ export function createSession({
     publish({
       selected: null,
       detail: null,
-      list: null,
       busy: false,
       requestStatus: "",
       error: "",

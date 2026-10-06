@@ -75,7 +75,7 @@
       >
     </article>
   {:else}
-    <p>{telemetry.state.busy ? "正在读取…" : "尚未收到匹配客户端的上报。"}</p>
+    <p>尚未收到匹配客户端的上报。</p>
   {/each}
 </div>
 {#if confirmation}
