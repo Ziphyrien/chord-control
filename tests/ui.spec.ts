@@ -208,6 +208,34 @@ test("loading, offline, retry and business rejection remain distinct", async ({ 
   expect(h.errors).toEqual([]);
 });
 
+test("feedback reflects whether an action changed the visible state", async ({ page }) => {
+  const result = deferred<Reply>();
+  const value = snapshot();
+  let checks = 0;
+  await boot(page, value, async (command) => {
+    if (command.type === "check_updates") {
+      checks += 1;
+      if (checks === 1) return result.promise;
+      return {
+        result: null,
+        snapshot: { ...value, checkedAt: "2026-01-01T00:01:00Z" },
+      };
+    }
+    return { result: null, snapshot: value };
+  });
+  const check = page.getByRole("button", { name: "检查更新", exact: true });
+  await expect(page.getByRole("article")).toHaveCount(3);
+  await check.click();
+  await expect(page.getByRole("status", { name: "操作完成", exact: true })).toHaveCount(0);
+  result.resolve({ result: null });
+  await expect(page.getByRole("status", { name: "操作完成", exact: true })).toBeVisible();
+  await expect(page.getByRole("status", { name: "操作完成", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("article")).toHaveCount(3);
+  await check.click();
+  await expect(page.getByText("上次检查", { exact: false })).toBeVisible();
+  await expect(page.getByRole("status", { name: "操作完成", exact: true })).toHaveCount(0);
+});
+
 test("changed dependency graph requires a fresh explicit confirmation", async ({ page }) => {
   const value = snapshot();
   let attempts = 0;

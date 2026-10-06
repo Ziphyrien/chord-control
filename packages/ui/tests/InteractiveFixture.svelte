@@ -4,6 +4,7 @@
   import Disclosure from "../Disclosure.svelte";
   import Checkbox from "../Checkbox.svelte";
   import Switch from "../Switch.svelte";
+  import ActionButton from "../ActionButton.svelte";
 
   let showing = $state(false);
   let value = $state("all");
@@ -63,6 +64,12 @@
 <p data-testid="requested">{String(requested)}</p>
 <p data-testid="requests">{requests}</p>
 <p data-testid="submissions">{submissions}</p>
+<div data-testid="action-feedback-row">
+  <ActionButton action={() => ({ ok: true, visible: false })}>Silent success</ActionButton>
+  <ActionButton action={() => ({ ok: false, visible: false })}>Silent failure</ActionButton>
+  <ActionButton action={() => ({ ok: true, visible: true })}>Visible result</ActionButton>
+  <span data-testid="action-feedback-anchor">stable anchor</span>
+</div>
 
 <button onclick={() => (showing = true)}>Open dialog</button>
 <button onclick={() => (value = "all")}>Reset selection</button>

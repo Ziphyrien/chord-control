@@ -75,6 +75,7 @@ export function createSession({
   async function run(scope, task, collecting = false) {
     try {
       await task();
+      return true;
     } catch (error) {
       if (current(scope)) {
         publish({
@@ -82,6 +83,7 @@ export function createSession({
           ...(collecting ? { requestStatus: "稍后刷新查看结果" } : {}),
         });
       }
+      return false;
     } finally {
       if (current(scope)) publish({ busy: false });
     }
@@ -92,7 +94,7 @@ export function createSession({
     if (current(scope)) publish({ authenticated: true, view: "list", list: result, error: "" });
   }
   function list(nextQuery = query) {
-    if (disposed || !token) return Promise.resolve();
+    if (disposed || !token) return Promise.resolve(false);
     query = nextQuery;
     const scope = begin({
       selected: null,

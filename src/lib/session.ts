@@ -376,9 +376,9 @@ export class ControllerSession {
       (autostart) => this.patch({ autostart }),
     );
   }
-  async openDirectory(): Promise<void> {
-    if (!this.desktop.available) return;
-    await this.perform(
+  async openDirectory(): Promise<boolean> {
+    if (!this.desktop.available) return false;
+    return this.perform(
       "directory",
       "open",
       () => this.desktop.openDataDirectory(),

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import ActionButton from "@chord-control/ui/ActionButton.svelte";
   import Page from "@chord-control/ui/Page.svelte";
   import Notice from "@chord-control/ui/Notice.svelte";
   import Facts from "@chord-control/ui/Facts.svelte";
@@ -93,9 +94,14 @@
     }
   }
 
-  function refresh() {
-    void refreshInfo();
-    void loadNote();
+  function visibleState() {
+    return JSON.stringify({ facts, note, noteLoaded, infoError, noteError, status });
+  }
+  async function refresh() {
+    const before = visibleState();
+    await Promise.all([refreshInfo(), loadNote()]);
+    const failed = Boolean(infoError || noteError);
+    return { ok: !failed, visible: failed || before !== visibleState() };
   }
   onMount(() => {
     active = true;
@@ -108,8 +114,11 @@
 </script>
 
 <Page title="系统信息与便笺">
-  {#snippet actions()}<button id="refresh" aria-busy={loading || reading} onclick={refresh}
-      >刷新</button
+  {#snippet actions()}<ActionButton
+      id="refresh"
+      action={refresh}
+      disabled={loading || reading}
+      aria-busy={loading || reading}>刷新</ActionButton
     >{/snippet}
   <Facts id="info" live items={facts.length ? facts : [{ label: "系统信息", value: "暂无信息" }]} />
   {#if infoError}<Notice tone="error">{infoError}</Notice>{/if}

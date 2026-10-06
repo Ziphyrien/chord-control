@@ -364,6 +364,7 @@ test(
       const page = await browser.newPage();
       const errors = dashboardDiagnostics(page, t);
       let holdList = false;
+      let listCalls = 0;
       const held = deferred();
       await page.route(`${origin}/api/**`, async (route) => {
         const path = new URL(route.request().url()).pathname;
@@ -372,7 +373,8 @@ test(
             held.resolve(route);
             return;
           }
-          return route.fulfill({ json: { devices: [device], receivedAt: 1 } });
+          const receivedAt = listCalls++ < 2 ? 1700000000000 : 1700000060000;
+          return route.fulfill({ json: { devices: [device], receivedAt } });
         }
         if (path.endsWith("/request-report"))
           return route.fulfill({ status: 503, json: { error: "采集请求失败" } });
@@ -388,6 +390,14 @@ test(
         await expect(page.locator("#token")).toHaveCount(0);
       }
       await enter();
+      const refresh = page.getByRole("button", { name: "刷新", exact: true });
+      await refresh.click();
+      await expect(page.getByRole("status", { name: "操作完成", exact: true })).toBeVisible();
+      await expect(page.getByRole("status", { name: "操作完成", exact: true })).toHaveCount(0);
+      const updatedBeforeVisibleRefresh = await page.locator("#updated").textContent();
+      await refresh.click();
+      await expect(page.locator("#updated")).not.toHaveText(updatedBeforeVisibleRefresh ?? "");
+      await expect(page.getByRole("status", { name: "操作完成", exact: true })).toHaveCount(0);
       await page.getByRole("link", { name: "查看", exact: true }).click();
       await page.getByRole("button", { name: "完整报告", exact: true }).click();
       await expect(page.locator("#raw")).toContainText("hostname");

@@ -2,6 +2,7 @@
   import { resolve } from "$app/paths";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
+  import ActionButton from "@chord-control/ui/ActionButton.svelte";
   import Modal from "@chord-control/ui/Modal.svelte";
   import Select from "@chord-control/ui/Select.svelte";
   import { getTelemetry } from "#lib/context.js";
@@ -21,14 +22,21 @@
     { value: "trusted", label: "已确认" },
     { value: "pending", label: "待确认" },
   ];
-  async function search(event) {
-    event.preventDefault();
+  function visibleState() {
+    return JSON.stringify({ list: telemetry.state.list, error: telemetry.state.error });
+  }
+  async function search() {
     const url = new URL(page.url);
 
     if (query) url.searchParams.set("q", query);
     else url.searchParams.delete("q");
-    if (url.search === page.url.search) await telemetry.session.list(query);
-    else await goto(resolve(`devices${url.search}`));
+    if (url.search === page.url.search) {
+      const before = visibleState();
+      const ok = await telemetry.session.list(query);
+      return { ok, visible: !ok || before !== visibleState() };
+    }
+    await goto(resolve(`devices${url.search}`));
+    return { ok: true, visible: true };
   }
   function trust() {
     const device = confirmation;
@@ -38,7 +46,14 @@
 </script>
 
 <svelte:head><title>设备 · Chord</title></svelte:head>
-<form id="search" class="toolbar" onsubmit={search}>
+<form
+  id="search"
+  class="toolbar"
+  onsubmit={(event) => {
+    event.preventDefault();
+    void search();
+  }}
+>
   <input
     id="query"
     type="search"
@@ -46,7 +61,13 @@
     aria-label="搜索客户端"
     bind:value={query}
   />
-  <button>刷新</button>
+  <ActionButton
+    type="submit"
+    action={(event) => {
+      event.preventDefault();
+      return search();
+    }}>刷新</ActionButton
+  >
   <Select label="确认状态" items={filters} bind:value={filter} />
 </form>
 <p id="updated" class="muted">

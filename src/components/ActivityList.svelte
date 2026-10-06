@@ -14,7 +14,7 @@
   const tones = { success: "已完成", info: "信息", warning: "需留意", error: "未完成" };
 </script>
 
-<section aria-label="活动记录">
+<section aria-label="活动记录" aria-busy={!loaded}>
   <div class="list-toolbar">
     <p class="muted">最近变化</p>
     <Select label="筛选活动" items={filters} bind:value={filter} />
@@ -31,10 +31,7 @@
       </li>
     {/each}
   </ol>
-  {#if !visible.length}<div class="empty">
-      <h2>
-        {!loaded ? "活动记录尚未载入" : filter === "all" ? "暂无活动记录" : "没有需要留意的记录"}
-      </h2>
-      <p>{!loaded ? "连接后可查看。" : ""}</p>
+  {#if !visible.length && loaded}<div class="empty">
+      <h2>{filter === "all" ? "暂无活动记录" : "没有需要留意的记录"}</h2>
     </div>{/if}
 </section>

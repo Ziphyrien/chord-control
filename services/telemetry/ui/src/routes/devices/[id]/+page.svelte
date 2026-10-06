@@ -71,7 +71,5 @@
         ><pre id="raw">{JSON.stringify(result.device.report, null, 2)}</pre></Disclosure
       >
     {/key}
-  {:else}
-    <p role="status">设备详情尚未载入。</p>
   {/if}
 </section>

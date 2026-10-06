@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import ActionButton from "@chord-control/ui/ActionButton.svelte";
   import Page from "@chord-control/ui/Page.svelte";
   import Notice from "@chord-control/ui/Notice.svelte";
   import Facts from "@chord-control/ui/Facts.svelte";
@@ -58,9 +59,14 @@
       : [],
   );
 
+  function visibleState() {
+    return JSON.stringify({ status, error, notice, detail, expanded });
+  }
   async function refresh(method: "status" | "send" = "status") {
-    if (!active || busy) return;
+    if (!active || busy) return { ok: false, visible: true };
+    const before = visibleState();
     busy = true;
+    let ok = true;
     clearTimeout(timer);
     try {
       const value = await call(method);
@@ -81,6 +87,7 @@
         error = `上报失败：${value.lastError}`;
         notice = "";
         awaitingSend = false;
+        ok = false;
       } else {
         notice = awaitingSend || method === "send" ? "上报成功" : "";
         awaitingSend = false;
@@ -89,6 +96,7 @@
       if (active) {
         error = message(cause);
         notice = "";
+        ok = false;
       }
     } finally {
       if (active) {
@@ -99,6 +107,7 @@
           }, 1500);
       }
     }
+    return { ok, visible: !ok || method === "send" || before !== visibleState() };
   }
 
   async function loadReport() {
@@ -128,7 +137,9 @@
 </script>
 
 <Page title="运行遥测" description="定期上报运行状态。暂停此插件即可停止上报。">
-  {#snippet actions()}<button aria-busy={busy} onclick={() => refresh()}>刷新</button>{/snippet}
+  {#snippet actions()}<ActionButton action={refresh} disabled={busy} aria-busy={busy}
+      >刷新</ActionButton
+    >{/snippet}
   {#if status}<Facts items={facts} />{/if}
   <div class="actions">
     <button

@@ -173,6 +173,8 @@ test(
     saved.resolve();
     await expect(page.locator("#status")).toContainText("当前修改尚未保存");
     await page.locator("#refresh").click();
+    await expect(page.getByRole("status", { name: "操作完成", exact: true })).toBeVisible();
+    await expect(page.getByRole("status", { name: "操作完成", exact: true })).toHaveCount(0);
     await expect(page.locator("#note")).toHaveValue("new draft");
     await page.locator("#note").fill("cancel on hide");
     await page.locator("#save").click();
@@ -188,6 +190,9 @@ test(
     await expect(page.locator("#note")).toHaveValue("saved note");
     assert.equal(reads, 2);
     await page.goto("http://plugins.test/telemetry/signed-generation/ui");
+    await page.getByRole("button", { name: "刷新", exact: true }).click();
+    await expect(page.getByRole("status", { name: "操作完成", exact: true })).toBeVisible();
+    await expect(page.getByRole("status", { name: "操作完成", exact: true })).toHaveCount(0);
     await page.locator("#send").click();
     await expect(page.locator("#send")).toHaveText("立即上报");
     await expect(page.locator("#send")).toBeEnabled();

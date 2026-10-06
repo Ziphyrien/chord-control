@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActionButton from "@chord-control/ui/ActionButton.svelte";
   import Checkbox from "@chord-control/ui/Checkbox.svelte";
   import Switch from "@chord-control/ui/Switch.svelte";
   import type { ControllerSettings } from "../../shared/protocol.ts";
@@ -26,7 +27,7 @@
     dataDir: string;
     onsave: (settings: ControllerSettings) => Promise<boolean>;
     ontoggle: () => Promise<void>;
-    onopen: () => Promise<void>;
+    onopen: () => Promise<boolean>;
   } = $props();
   let edits = $state<ControllerSettings | null>(null);
   let error = $state("");
@@ -35,6 +36,11 @@
     edits = { ...draft, ...patch };
     error = "";
   }
+  async function openDirectory() {
+    const ok = await onopen();
+    return { ok, visible: !ok };
+  }
+
   async function save() {
     if (!available || saving) return;
     try {
@@ -155,7 +161,7 @@
           <h2 id="directory-title">数据存储</h2>
           <p class="muted path">{dataDir}</p>
         </div>
-        <button disabled={!desktopAvailable} onclick={onopen}>打开文件夹</button>
+        <ActionButton action={openDirectory} disabled={!desktopAvailable}>打开文件夹</ActionButton>
       </div>
     </section>{/if}
 </div>
