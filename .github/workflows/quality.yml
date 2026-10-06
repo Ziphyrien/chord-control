@@ -31,6 +31,16 @@ jobs:
       - name: Build telemetry dashboard for production browser checks
         run: vp run --filter @chord-control/telemetry-dashboard build
       - run: vp test
+      - name: Package telemetry Worker without deploying
+        working-directory: services/telemetry
+        run: vp exec wrangler deploy --dry-run --outdir dist
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: telemetry-deployment
+          path: |
+            services/telemetry/dist/
+            services/telemetry/ui/dist/
+          if-no-files-found: error
       - uses: dtolnay/rust-toolchain@stable
         if: inputs.rust
         with:

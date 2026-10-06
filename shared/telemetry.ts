@@ -14,7 +14,7 @@ export type TelemetryReport = {
   requestId: string | null;
   client: {
     hostname: string;
-    username: string;
+    username?: string;
     platform: string;
     release: string;
     arch: string;
@@ -24,8 +24,8 @@ export type TelemetryReport = {
     uptimeSeconds: number;
     rssBytes: number;
     heapUsedBytes: number;
-    cpuUserMicros: number;
-    cpuSystemMicros: number;
+    cpuUserMicros?: number;
+    cpuSystemMicros?: number;
   };
   host: Json;
 };
@@ -49,8 +49,13 @@ export function isTelemetryReport(value: unknown): value is TelemetryReport {
   )
     return false;
   const processMetrics = value.process;
-  for (const key of ["hostname", "username", "platform", "release", "arch"] as const)
+  for (const key of ["hostname", "platform", "release", "arch"] as const)
     if (typeof value.client[key] !== "string" || value.client[key].length > 256) return false;
+  if (
+    value.client.username !== undefined &&
+    (typeof value.client.username !== "string" || value.client.username.length > 256)
+  )
+    return false;
   for (const [key, number] of Object.entries(value.process))
     if (
       !["uptimeSeconds", "rssBytes", "heapUsedBytes", "cpuUserMicros", "cpuSystemMicros"].includes(
@@ -65,7 +70,7 @@ export function isTelemetryReport(value: unknown): value is TelemetryReport {
     typeof value.client.uptimeSeconds === "number" &&
     Number.isFinite(value.client.uptimeSeconds) &&
     value.client.uptimeSeconds >= 0 &&
-    ["uptimeSeconds", "rssBytes", "heapUsedBytes", "cpuUserMicros", "cpuSystemMicros"].every(
+    ["uptimeSeconds", "rssBytes", "heapUsedBytes"].every(
       (key) => typeof processMetrics[key] === "number",
     )
   );

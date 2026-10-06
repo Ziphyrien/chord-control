@@ -107,29 +107,33 @@ test("collector missing or cancelled is an explicit failure and can still form a
   assert.equal(cancelled.ok, false);
   assert.match(cancelled.error, /abort/i);
   assert.equal(native.calls, 1);
-  assert.equal(
-    isTelemetryReport({
-      format: 1,
-      sequence: 1,
-      capturedAt: new Date().toISOString(),
-      requestId: null,
-      client: {
-        hostname: "test",
-        username: "test",
-        platform: "win32",
-        release: "test",
-        arch: "x64",
-        uptimeSeconds: 1,
-      },
-      process: {
-        uptimeSeconds: 1,
-        rssBytes: 1,
-        heapUsedBytes: 1,
-        cpuUserMicros: 0,
-        cpuSystemMicros: 0,
-      },
-      host: { native: { error: "old host unavailable" }, windows },
-    }),
-    true,
-  );
+  const report = {
+    format: 1,
+    sequence: 1,
+    capturedAt: new Date().toISOString(),
+    requestId: null,
+    client: {
+      hostname: "test",
+      username: "test",
+      platform: "win32",
+      release: "test",
+      arch: "x64",
+      uptimeSeconds: 1,
+    },
+    process: {
+      uptimeSeconds: 1,
+      rssBytes: 1,
+      heapUsedBytes: 1,
+      cpuUserMicros: 0,
+      cpuSystemMicros: 0,
+    },
+    host: { native: { error: "old host unavailable" }, windows },
+  };
+  assert.equal(isTelemetryReport(report), true, "legacy report remains accepted");
+  delete report.client.username;
+  delete report.process.cpuUserMicros;
+  delete report.process.cpuSystemMicros;
+  assert.equal(isTelemetryReport(report), true, "minimal report is accepted");
+  report.process.cpuUserMicros = "invalid";
+  assert.equal(isTelemetryReport(report), false, "optional legacy metrics remain validated");
 });

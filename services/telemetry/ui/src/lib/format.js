@@ -4,7 +4,9 @@ export const number = (value, suffix = "") =>
     : "未知";
 export const date = (value) => (value ? new Date(value).toLocaleString() : "未知");
 export const deviceName = (device) =>
-  device.label || `${device.report.client.hostname} / ${device.report.client.username}`;
+  device.label ||
+  [device.report.client.hostname, device.report.client.username].filter(Boolean).join(" / ") ||
+  device.id;
 export const labels = {
   active: "运行中",
   update: "可更新",
