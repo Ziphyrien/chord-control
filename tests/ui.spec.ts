@@ -158,29 +158,6 @@ test("pausing a plugin shows a single compact notification", async ({ page }) =>
   expect(h.errors).toEqual([]);
 });
 
-test("failed same-version rebuilds do not show a duplicate target or stale row error", async ({
-  page,
-}) => {
-  const value = snapshot();
-  value.plugins[0] = {
-    ...value.plugins[0],
-    version: "1.0.3",
-    latestVersion: "1.0.3",
-    hasUpdate: true,
-    status: "update",
-    error: "fixture activation failed",
-  };
-  const h = await boot(page, value);
-  await expect(page.getByRole("article")).toHaveCount(3);
-  const row = page.getByRole("article", { name: "基础服务", exact: true });
-  await expect(row).toContainText("v1.0.3");
-  await expect(row).toContainText("有新构建可用");
-  await expect(row).not.toContainText("可更新至 v1.0.3");
-  await expect(row).not.toContainText("fixture activation failed");
-  await expect(row.getByRole("button", { name: "更新", exact: true })).toBeEnabled();
-  expect(h.errors).toEqual([]);
-});
-
 // Browser cases need an externally served frontend. No test body invokes a build.
 // The root Playwright config must disable its dev server for artifact-only runs.
 test("loading, offline, retry and business rejection remain distinct", async ({ page }) => {
@@ -191,13 +168,10 @@ test("loading, offline, retry and business rejection remain distinct", async ({ 
       return ++snapshots === 1 ? initial.promise : { result: null, snapshot: snapshot() };
     return { result: null, message: "发布者暂时不可用" };
   });
-  await expect(page.getByText("正在连接…", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "添加插件", exact: true })).toHaveCount(0);
+  await expect(page.getByText("正在连接…", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "添加插件", exact: true })).toBeDisabled();
   initial.resolve({ result: null, snapshot: snapshot() });
-  const checkUpdates = page.getByRole("button", { name: "检查更新", exact: true });
-  await checkUpdates.click();
-  await expect(checkUpdates).toHaveText("检查更新");
-  await expect(checkUpdates).toBeEnabled();
+  await page.getByRole("button", { name: "检查更新", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("发布者暂时不可用");
   await expect(page.getByRole("button", { name: "添加插件", exact: true })).toBeEnabled();
   await page.evaluate(() => window.testBridge.emit({ type: "disconnected", message: "连接中断" }));
@@ -206,34 +180,6 @@ test("loading, offline, retry and business rejection remain distinct", async ({ 
   await page.getByRole("button", { name: "重新连接" }).click();
   await expect(page.getByRole("button", { name: "检查更新", exact: true })).toBeEnabled();
   expect(h.errors).toEqual([]);
-});
-
-test("feedback reflects whether an action changed the visible state", async ({ page }) => {
-  const result = deferred<Reply>();
-  const value = snapshot();
-  let checks = 0;
-  await boot(page, value, async (command) => {
-    if (command.type === "check_updates") {
-      checks += 1;
-      if (checks === 1) return result.promise;
-      return {
-        result: null,
-        snapshot: { ...value, checkedAt: "2026-01-01T00:01:00Z" },
-      };
-    }
-    return { result: null, snapshot: value };
-  });
-  const check = page.getByRole("button", { name: "检查更新", exact: true });
-  await expect(page.getByRole("article")).toHaveCount(3);
-  await check.click();
-  await expect(page.getByRole("status", { name: "操作完成", exact: true })).toHaveCount(0);
-  result.resolve({ result: null });
-  await expect(page.getByRole("status", { name: "操作完成", exact: true })).toBeVisible();
-  await expect(page.getByRole("status", { name: "操作完成", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("article")).toHaveCount(3);
-  await check.click();
-  await expect(page.getByText("上次检查", { exact: false })).toBeVisible();
-  await expect(page.getByRole("status", { name: "操作完成", exact: true })).toHaveCount(0);
 });
 
 test("changed dependency graph requires a fresh explicit confirmation", async ({ page }) => {
@@ -278,10 +224,9 @@ test("late panel response cannot reopen a closed view or replace a new connectio
       .getByRole("button", { name: "打开", exact: true })
       .click();
   await open();
-  await expect(page.getByRole("article", { name: "基础服务", exact: true })).toBeVisible();
-  await expect(page.getByText("正在打开插件…", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("正在打开插件…", { exact: true })).toBeVisible();
   await expect.poll(() => requests.length).toBe(1);
-  await page.getByRole("navigation").getByRole("button", { name: "插件", exact: true }).click();
+  await page.getByRole("button", { name: "返回插件" }).click();
   requests[0].resolve({ result: { url: "https://example.invalid/old", revision: "r1" } });
   await expect(page.locator("iframe")).toHaveCount(0);
   await open();
@@ -319,7 +264,7 @@ test("settings draft survives snapshots and independent desktop operations", asy
   await page.getByRole("button", { name: "保存设置", exact: true }).click();
   await page.getByRole("switch", { name: "登录时自动启动" }).check();
   await expect(page.getByRole("switch")).toBeChecked();
-  await expect(page.getByRole("button", { name: "保存设置", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "保存中…", exact: true })).toBeDisabled();
   saving.resolve({ result: null, snapshot: value });
   await expect(page.getByRole("status")).toHaveText("设置已保存");
   const saved = h.commands.filter((item) => item.type === "set_settings");

@@ -74,7 +74,9 @@
     {"•".repeat(pad.count)}
   </p>
   <Notice id="status"
-    >{preview ? "密保盘预览" : pad.message || (!pad.view ? "等待验证请求" : "")}</Notice
+    >{preview
+      ? "密保盘预览"
+      : pad.message || (!pad.view ? (pad.busy ? "正在加载…" : "暂无待验证请求") : "")}</Notice
   >
 </Page>
 

@@ -26,7 +26,7 @@
     }}
     aria-busy={busy}
   >
-    <fieldset disabled={!available}>
+    <fieldset disabled={!available || busy}>
       <label class="field"
         >插件地址<input
           type="url"
@@ -43,10 +43,10 @@
     </fieldset>
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <div class="actions dialog-actions">
-      <button type="button" onclick={onclose}>取消</button><button
+      <button type="button" onclick={onclose}>{busy ? "关闭" : "取消"}</button><button
         class="primary"
         type="submit"
-        disabled={!available}>安装</button
+        disabled={!available || busy}>{busy ? "正在安装…" : "安装"}</button
       >
     </div>
   </form>

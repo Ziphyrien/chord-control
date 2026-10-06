@@ -15,7 +15,6 @@
     "./Disclosure.svelte": "./Disclosure.svelte",
     "./Checkbox.svelte": "./Checkbox.svelte",
     "./Switch.svelte": "./Switch.svelte",
-    "./ActionButton.svelte": "./ActionButton.svelte",
     "./theme.css": {
       "types": "./theme.d.ts",
       "default": "./theme.css"

@@ -47,20 +47,6 @@ test(
       await page.setContent('<!doctype html><html lang="en"><body></body></html>');
       await page.addScriptTag({ content: script.code });
 
-      const feedbackAnchor = page.getByTestId("action-feedback-anchor");
-      const anchorBefore = await feedbackAnchor.boundingBox();
-      await page.getByRole("button", { name: "Visible result", exact: true }).click();
-      await expect(page.getByRole("status")).toHaveCount(0);
-      assert.deepEqual(await feedbackAnchor.boundingBox(), anchorBefore);
-      await page.getByRole("button", { name: "Silent success", exact: true }).click();
-      await expect(page.getByRole("status", { name: "操作完成", exact: true })).toBeVisible();
-      assert.deepEqual(await feedbackAnchor.boundingBox(), anchorBefore);
-      await expect(page.getByRole("status", { name: "操作完成", exact: true })).toHaveCount(0);
-      await page.getByRole("button", { name: "Silent failure", exact: true }).click();
-      await expect(page.getByRole("status", { name: "操作失败", exact: true })).toBeVisible();
-      assert.deepEqual(await feedbackAnchor.boundingBox(), anchorBefore);
-      await expect(page.getByRole("status", { name: "操作失败", exact: true })).toHaveCount(0);
-
       const checkbox = page.getByRole("checkbox", { name: "Automatic updates" });
       await expect(checkbox).toHaveAttribute("id", "updates");
       await expect(checkbox).toHaveAttribute("type", "button");

@@ -4,7 +4,9 @@
   import { defaultSettings } from "../../shared/protocol.ts";
   const { session, view } = getWorkspace();
   const model = $derived(view.state);
-  const available = $derived(model.connection !== "offline");
+  const available = $derived(
+    model.connection === "online" && !model.pending.mutation && !model.pending.refresh,
+  );
 </script>
 
 <header class="page-heading"><h1>设置</h1></header>

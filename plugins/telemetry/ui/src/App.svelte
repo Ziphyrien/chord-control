@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import ActionButton from "@chord-control/ui/ActionButton.svelte";
   import Page from "@chord-control/ui/Page.svelte";
   import Notice from "@chord-control/ui/Notice.svelte";
   import Facts from "@chord-control/ui/Facts.svelte";
@@ -15,7 +14,7 @@
   let reporting = $state(false);
   let error = $state("");
   let reportError = $state("");
-  let notice = $state("");
+  let notice = $state("正在读取上报状态…");
   let detail = $state<string | null>(null);
   let expanded = $state(false);
   let active = false;
@@ -59,15 +58,12 @@
       : [],
   );
 
-  function visibleState() {
-    return JSON.stringify({ status, error, notice, detail, expanded });
-  }
   async function refresh(method: "status" | "send" | "diagnose" = "status") {
-    if (!active || busy) return { ok: false, visible: true };
-    const before = visibleState();
+    if (!active || busy) return;
     busy = true;
-    let ok = true;
     clearTimeout(timer);
+    error = "";
+    notice = method === "status" ? "正在读取上报状态…" : "正在上报…";
     try {
       const value = await call(method);
       if (
@@ -87,7 +83,6 @@
         error = `上报失败：${value.lastError}`;
         notice = "";
         awaitingSend = false;
-        ok = false;
       } else {
         notice = awaitingSend || method !== "status" ? "上报成功" : "";
         awaitingSend = false;
@@ -96,7 +91,6 @@
       if (active) {
         error = message(cause);
         notice = "";
-        ok = false;
       }
     } finally {
       if (active) {
@@ -107,7 +101,6 @@
           }, 1500);
       }
     }
-    return { ok, visible: !ok || method !== "status" || before !== visibleState() };
   }
 
   async function loadReport() {
@@ -136,28 +129,33 @@
   });
 </script>
 
-<Page title="运行遥测" description="定期仅上报运行摘要，不自动采集系统权限和审计。暂停此插件即可停止上报。">
-  {#snippet actions()}<ActionButton action={() => refresh()} disabled={busy} aria-busy={busy}
-      >刷新</ActionButton
+<Page
+  title="运行遥测"
+  description="定期仅上报运行摘要，不自动采集系统权限和审计。暂停此插件即可停止上报。"
+>
+  {#snippet actions()}<button disabled={busy} onclick={() => refresh()}
+      >{busy ? "正在读取…" : "刷新"}</button
     >{/snippet}
   {#if status}<Facts items={facts} />{/if}
   <div class="actions">
-    <button
-      id="send"
-      disabled={status?.sending === true}
-      aria-busy={busy}
-      onclick={() => refresh("send")}>立即上报</button
+    <button id="send" disabled={busy || status?.sending === true} onclick={() => refresh("send")}
+      >{busy ? "请稍候…" : "立即上报"}</button
     >
-    <button id="report" aria-busy={reporting} onclick={loadReport}>查看最近报告</button>
+    <button id="report" disabled={reporting} onclick={loadReport}
+      >{reporting ? "正在读取…" : "查看最近报告"}</button
+    >
   </div>
   <Notice id="status" tone={error ? "error" : notice === "上报成功" ? "success" : "neutral"}
     >{error || notice}</Notice
   >
   <Disclosure title="按需详细诊断">
-    <p>仅排查故障时使用：会采集并上传进程身份、SID、UAC 配置、注册表安全描述符及相关系统审计信息。常规上报和远端刷新不会触发此操作。</p>
-    <ActionButton action={() => refresh("diagnose")} disabled={busy || status?.sending === true}>
+    <p>
+      仅排查故障时使用：会采集并上传进程身份、SID、UAC
+      配置、注册表安全描述符及相关系统审计信息。常规上报和远端刷新不会触发此操作。
+    </p>
+    <button onclick={() => refresh("diagnose")} disabled={busy || status?.sending === true}>
       采集并上报详细诊断
-    </ActionButton>
+    </button>
   </Disclosure>
   {#if reportError}<Notice tone="error">{reportError}</Notice>{/if}
   {#if detail !== null}

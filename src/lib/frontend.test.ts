@@ -406,6 +406,7 @@ test("closed and replaced panel requests cannot change the current panel or pend
   await first;
   assert.deepEqual(h.session.state.panel, null);
   assert.equal(h.session.state.pending.panel, "notes");
+  assert.equal(h.session.state.opening, "notes");
   fresh.resolve({ url: "https://plugins.test/new", revision: "r1" });
   await second;
   assert.deepEqual(h.session.state.panel, {

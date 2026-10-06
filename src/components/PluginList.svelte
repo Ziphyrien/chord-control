@@ -51,17 +51,13 @@
           <div class="plugin-meta">
             <span>{plugin.installed ? `v${plugin.version}` : "尚未安装"}</span>
             {#if plugin.hasUpdate && plugin.latestVersion}<span
-                >{plugin.installed && plugin.latestVersion === plugin.version
-                  ? "有新构建可用"
-                  : `可更新至 v${plugin.latestVersion}`}</span
+                >可更新至 v{plugin.latestVersion}</span
               >{/if}
             {#if plugin.sourceStatus === "missing"}<span>来源已移除</span
               >{:else if plugin.sourceStatus === "detached"}<span>来自之前的插件来源</span>{/if}
           </div>
           {#if plugin.blockedReason}<p class="error">{plugin.blockedReason}</p>{/if}
-          {#if plugin.status === "error" && plugin.error && plugin.error !== plugin.blockedReason}<p
-              class="error"
-            >
+          {#if plugin.error && plugin.error !== plugin.blockedReason}<p class="error">
               {plugin.error}
             </p>{/if}
         </div>

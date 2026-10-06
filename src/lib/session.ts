@@ -24,6 +24,7 @@ export interface SessionState {
   notice: string;
   autostart: boolean | null;
   panel: PluginPanel | null;
+  opening: string | null;
   confirmation: GroupConfirmation | null;
 }
 const messageOf = (error: unknown): string =>
@@ -41,6 +42,7 @@ export class ControllerSession {
     notice: "",
     autostart: null,
     panel: null,
+    opening: null,
     confirmation: null,
   };
   private listeners = new Set<(state: SessionState) => void>();
@@ -117,6 +119,7 @@ export class ControllerSession {
       errors: {},
       notice: "",
       panel: null,
+      opening: null,
       confirmation: null,
       autostart: null,
     });
@@ -167,6 +170,7 @@ export class ControllerSession {
         connection: "offline",
         pending: {},
         panel: null,
+        opening: null,
         confirmation: null,
         notice: "",
       });
@@ -226,13 +230,14 @@ export class ControllerSession {
     this.operations.delete("panel");
     const pending = { ...this.state.pending };
     delete pending.panel;
-    this.patch({ panel: null, pending });
+    this.patch({ panel: null, opening: null, pending });
     this.clearError("panel");
   }
   async open(plugin: PluginSummary): Promise<void> {
-    if (this.state.connection !== "online" || this.operations.has("panel")) return;
+    if (this.state.connection !== "online") return;
     this.closePanel();
     const panelEpoch = this.panelEpoch;
+    this.patch({ opening: plugin.name });
     await this.perform(
       "panel",
       plugin.id,
@@ -260,6 +265,7 @@ export class ControllerSession {
       },
       () => panelEpoch === this.panelEpoch,
     );
+    if (panelEpoch === this.panelEpoch) this.patch({ opening: null });
   }
 
   requestChange(plugin: PluginSummary, kind: GroupConfirmation["kind"]): void {
@@ -376,9 +382,9 @@ export class ControllerSession {
       (autostart) => this.patch({ autostart }),
     );
   }
-  async openDirectory(): Promise<boolean> {
-    if (!this.desktop.available) return false;
-    return this.perform(
+  async openDirectory(): Promise<void> {
+    if (!this.desktop.available) return;
+    await this.perform(
       "directory",
       "open",
       () => this.desktop.openDataDirectory(),

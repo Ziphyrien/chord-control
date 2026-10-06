@@ -11,7 +11,7 @@
       "binary": "chord-observer",
       "asset": "native/chord-observer.exe"
     },
-    "minHostVersion": "0.4.17",
+    "minHostVersion": "0.4.18",
     "permissions": [
       "native-asset",
       "diagnostics",

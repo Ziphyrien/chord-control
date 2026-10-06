@@ -227,7 +227,7 @@ test("polling stops after 15 attempts without deleting the server pending reques
     const done = h.tick(attempt === 0 ? 1500 : 2000);
     h.calls.at(-1).respond(pending);
     await done;
-    assert.equal(h.state.requestStatus, attempt < 14 ? "采集进行中" : "稍后刷新查看结果");
+    assert.equal(h.state.requestStatus, attempt < 14 ? "正在采集…" : "稍后刷新查看结果");
   }
   assert.equal(h.scheduled.size, 0);
   assert.equal(h.calls.filter((call) => call.path.endsWith("/live")).length, 15);
@@ -324,7 +324,7 @@ test("replacing a collection cancels its pending POST before starting a new time
   assert(oldCall.options.signal.aborted);
   assert.equal(h.states.length, changes);
   assert.equal(h.scheduled.size, 1);
-  assert.equal(h.state.requestStatus, "采集进行中");
+  assert.equal(h.state.requestStatus, "正在采集…");
 });
 
 test("an already queued stale timer cannot hide the current timer from logout cleanup", async () => {
@@ -364,7 +364,6 @@ test(
       const page = await browser.newPage();
       const errors = dashboardDiagnostics(page, t);
       let holdList = false;
-      let listCalls = 0;
       const held = deferred();
       await page.route(`${origin}/api/**`, async (route) => {
         const path = new URL(route.request().url()).pathname;
@@ -373,8 +372,7 @@ test(
             held.resolve(route);
             return;
           }
-          const receivedAt = listCalls++ < 2 ? 1700000000000 : 1700000060000;
-          return route.fulfill({ json: { devices: [device], receivedAt } });
+          return route.fulfill({ json: { devices: [device], receivedAt: 1 } });
         }
         if (path.endsWith("/request-report"))
           return route.fulfill({ status: 503, json: { error: "采集请求失败" } });
@@ -390,14 +388,6 @@ test(
         await expect(page.locator("#token")).toHaveCount(0);
       }
       await enter();
-      const refresh = page.getByRole("button", { name: "刷新", exact: true });
-      await refresh.click();
-      await expect(page.getByRole("status", { name: "操作完成", exact: true })).toBeVisible();
-      await expect(page.getByRole("status", { name: "操作完成", exact: true })).toHaveCount(0);
-      const updatedBeforeVisibleRefresh = await page.locator("#updated").textContent();
-      await refresh.click();
-      await expect(page.locator("#updated")).not.toHaveText(updatedBeforeVisibleRefresh ?? "");
-      await expect(page.getByRole("status", { name: "操作完成", exact: true })).toHaveCount(0);
       await page.getByRole("link", { name: "查看", exact: true }).click();
       await page.getByRole("button", { name: "完整报告", exact: true }).click();
       await expect(page.locator("#raw")).toContainText("hostname");
@@ -409,8 +399,6 @@ test(
       holdList = true;
       await page.locator("#close").click();
       const late = await held.promise;
-      await expect(page.locator(".device")).toHaveCount(1);
-      await expect(page.locator("body")).not.toContainText("正在读取…");
       await page.locator("#logout").click();
       await late.fulfill({ json: { devices: [device], receivedAt: 1 } });
       await expect(page.locator("#workspace")).toHaveCount(0);

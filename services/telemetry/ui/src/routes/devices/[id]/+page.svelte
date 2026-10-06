@@ -21,7 +21,7 @@
     <h2 id="name">{result ? deviceName(result.device) : "设备详情"}</h2>
     <button
       id="request"
-      disabled={!result}
+      disabled={telemetry.state.busy || !result}
       onclick={() => {
         void telemetry.session.requestReport();
       }}>刷新摘要</button
@@ -44,23 +44,30 @@
       rows={view.plugins}
     />
     {#if result.device.report.host?.kind !== "summary"}
-    <h3>调用指标</h3>
-    <p class="muted">成功率按已结束的调用计算，业务效果见插件核验指标。空值表示暂无数据。</p>
-    <DataTable
-      id="metrics"
-      headers={["插件 / 操作", "次数 / 失败", "成功率", "平均 / 最大耗时", "统计起点", "最近错误"]}
-      rows={view.metrics}
-    />
-    <h3>插件自报指标</h3>
-    <DataTable
-      id="custom-metrics"
-      headers={["插件 / 指标", "值", "单位", "统计起点"]}
-      rows={view.custom}
-    />
-    <h3>最近活动</h3>
-    <div id="activities">
-      {#each view.activities as activity, index (index)}<p>{activity}</p>{/each}
-    </div>
+      <h3>调用指标</h3>
+      <p class="muted">成功率按已结束的调用计算，业务效果见插件核验指标。空值表示暂无数据。</p>
+      <DataTable
+        id="metrics"
+        headers={[
+          "插件 / 操作",
+          "次数 / 失败",
+          "成功率",
+          "平均 / 最大耗时",
+          "统计起点",
+          "最近错误",
+        ]}
+        rows={view.metrics}
+      />
+      <h3>插件自报指标</h3>
+      <DataTable
+        id="custom-metrics"
+        headers={["插件 / 指标", "值", "单位", "统计起点"]}
+        rows={view.custom}
+      />
+      <h3>最近活动</h3>
+      <div id="activities">
+        {#each view.activities as activity, index (index)}<p>{activity}</p>{/each}
+      </div>
     {/if}
     <h3>历史样本</h3>
     <div id="history" class="scroll">
@@ -73,5 +80,7 @@
         ><pre id="raw">{JSON.stringify(result.device.report, null, 2)}</pre></Disclosure
       >
     {/key}
+  {:else if telemetry.state.busy}
+    <p role="status">正在读取…</p>
   {/if}
 </section>

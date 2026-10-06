@@ -566,7 +566,6 @@ test(
         return route.fulfill({ status: 404, json: { error: "未找到" } });
       });
       await page.goto(`${origin}/devices/new`);
-      await expect(page.locator("body")).not.toContainText("设备详情尚未载入");
       await page.locator("#token").fill("test-token");
       await page.getByRole("button", { name: "进入", exact: true }).click();
       await page.locator("#native-failures td").first().waitFor();
