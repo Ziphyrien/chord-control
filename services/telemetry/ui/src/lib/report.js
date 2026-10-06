@@ -17,6 +17,7 @@ export function reportView(result) {
       [
         "主程序更新",
         host.native?.updater?.error ||
+          (host.native?.updater?.hasError ? "有错误（详见本地诊断）" : null) ||
           host.native?.updater?.availableVersion ||
           (host.native?.updater?.busy === true
             ? "进行中"
@@ -29,7 +30,13 @@ export function reportView(result) {
       plugin.name,
       `${plugin.version} / ${plugin.latestVersion ?? "—"}`,
       labels[plugin.status] ?? plugin.status,
-      plugin.error ?? plugin.blockedReason ?? "—",
+      plugin.error ??
+        plugin.blockedReason ??
+        (plugin.hasError
+          ? "存在运行错误（详见本地诊断）"
+          : plugin.blocked
+            ? "无法启动（详见本地诊断）"
+            : "—"),
     ]),
     metrics: (host.metrics ?? []).map((metric) => [
       `${metric.pluginId} / ${metric.operation}`,

@@ -62,7 +62,7 @@
   function visibleState() {
     return JSON.stringify({ status, error, notice, detail, expanded });
   }
-  async function refresh(method: "status" | "send" = "status") {
+  async function refresh(method: "status" | "send" | "diagnose" = "status") {
     if (!active || busy) return { ok: false, visible: true };
     const before = visibleState();
     busy = true;
@@ -89,7 +89,7 @@
         awaitingSend = false;
         ok = false;
       } else {
-        notice = awaitingSend || method === "send" ? "上报成功" : "";
+        notice = awaitingSend || method !== "status" ? "上报成功" : "";
         awaitingSend = false;
       }
     } catch (cause) {
@@ -107,7 +107,7 @@
           }, 1500);
       }
     }
-    return { ok, visible: !ok || method === "send" || before !== visibleState() };
+    return { ok, visible: !ok || method !== "status" || before !== visibleState() };
   }
 
   async function loadReport() {
@@ -136,7 +136,7 @@
   });
 </script>
 
-<Page title="运行遥测" description="定期上报运行状态。暂停此插件即可停止上报。">
+<Page title="运行遥测" description="定期仅上报运行摘要，不自动采集系统权限和审计。暂停此插件即可停止上报。">
   {#snippet actions()}<ActionButton action={() => refresh()} disabled={busy} aria-busy={busy}
       >刷新</ActionButton
     >{/snippet}
@@ -153,6 +153,12 @@
   <Notice id="status" tone={error ? "error" : notice === "上报成功" ? "success" : "neutral"}
     >{error || notice}</Notice
   >
+  <Disclosure title="按需详细诊断">
+    <p>仅排查故障时使用：会采集并上传进程身份、SID、UAC 配置、注册表安全描述符及相关系统审计信息。常规上报和远端刷新不会触发此操作。</p>
+    <ActionButton action={() => refresh("diagnose")} disabled={busy || status?.sending === true}>
+      采集并上报详细诊断
+    </ActionButton>
+  </Disclosure>
   {#if reportError}<Notice tone="error">{reportError}</Notice>{/if}
   {#if detail !== null}
     <Disclosure title="最近报告 · 原始数据" bind:open={expanded}>

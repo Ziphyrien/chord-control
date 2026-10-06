@@ -27,6 +27,14 @@ function collect(request) {
 const request = { format: 1, processes: [{ role: "controller", pid: process.pid }], registry: [] };
 const initial = collect(request);
 assert.equal(initial.processes[0].ok, true, JSON.stringify(initial.processes[0]));
+assert.deepEqual(
+  initial.vendorEvidence.channels,
+  [],
+  "no failure targets must not open audit channels",
+);
+assert.equal(initial.vendorEvidence.auditPolicy.ok, false, "audit policy was not requested");
+assert.equal(initial.vendorEvidence.channelEnumeration.ok, false, "channels were not enumerated");
+assert.match(initial.vendorEvidence.reason, /audit reads skipped/);
 const birth = initial.processes[0].value.createdAt;
 // All probes are read-only; eight real descriptors exercise the maximum request batch.
 request.registry = Array.from({ length: 8 }, (_, index) => ({

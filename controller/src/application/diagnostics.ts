@@ -1,7 +1,7 @@
 import type { ControllerSnapshot, Json } from "../../../shared/protocol.ts";
 
 /** Explicit projection keeps publisher credentials, paths and plugin content out of telemetry. */
-export function operationalSnapshot(snapshot: ControllerSnapshot): Json {
+export function operationalSnapshot(snapshot: ControllerSnapshot, summary = false): Json {
   return {
     version: snapshot.controllerVersion,
     startedAt: snapshot.startedAt,
@@ -26,15 +26,23 @@ export function operationalSnapshot(snapshot: ControllerSnapshot): Json {
       hasUi: plugin.hasUi,
       sourceStatus: plugin.sourceStatus,
       updatedAt: plugin.updatedAt,
-      blockedReason: plugin.blockedReason?.slice(0, 1000) ?? null,
-      error: plugin.error?.slice(0, 1000) ?? null,
+      ...(summary
+        ? { hasError: !!plugin.error, blocked: !!plugin.blockedReason }
+        : {
+            blockedReason: plugin.blockedReason?.slice(0, 1000) ?? null,
+            error: plugin.error?.slice(0, 1000) ?? null,
+          }),
     })),
-    activities: snapshot.activities.slice(0, 20).map((item) => ({
-      id: item.id,
-      time: item.time,
-      title: item.title,
-      tone: item.tone,
-      detail: item.detail.slice(0, 1000),
-    })),
+    ...(summary
+      ? {}
+      : {
+          activities: snapshot.activities.slice(0, 20).map((item) => ({
+            id: item.id,
+            time: item.time,
+            title: item.title,
+            tone: item.tone,
+            detail: item.detail.slice(0, 1000),
+          })),
+        }),
   };
 }

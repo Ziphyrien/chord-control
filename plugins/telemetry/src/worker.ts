@@ -18,16 +18,20 @@ export default defineFacet({
       const { dataDir } = await host.paths(BACKGROUND_CONTEXT);
       reporter = new Reporter(
         dataDir,
-        async (signal) => {
+        async (signal, detailed) => {
           let snapshot: Json;
           try {
-            snapshot = await diagnostics.snapshot(withAbortSignal(signal, BACKGROUND_CONTEXT));
+            const context = withAbortSignal(signal, BACKGROUND_CONTEXT);
+            snapshot = await (detailed
+              ? diagnostics.snapshot(context)
+              : diagnostics.summary(context));
           } catch (error) {
-            snapshot = { error: message(error).slice(0, 1000) };
+            snapshot = { error: detailed ? message(error).slice(0, 1000) : "宿主运行摘要不可用" };
           }
           return {
             ...(object(snapshot) ? snapshot : { error: "宿主诊断未返回对象" }),
-            windows: await collectWindows(native, snapshot, signal),
+            kind: detailed ? "diagnostic" : "summary",
+            ...(detailed ? { windows: await collectWindows(native, snapshot, signal) } : {}),
           };
         },
         (text) => host.log(text, BACKGROUND_CONTEXT),
@@ -45,6 +49,7 @@ export default defineFacet({
       async call(method) {
         if (!reporter) throw new Error("遥测尚未启动");
         if (method === "send") void reporter.send();
+        else if (method === "diagnose") void reporter.send(true);
         else if (method === "report") return reporter.report();
         else if (method !== "status") throw new Error("未知遥测操作");
         return reporter.status();

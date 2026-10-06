@@ -6,6 +6,7 @@ import {
   defineFacet,
   type FacetHost,
   type LoadedFacets,
+  type Context,
 } from "@earendil-works/chord";
 import {
   awaitWithContext,
@@ -50,7 +51,7 @@ interface Options {
   log(id: string, detail: string): void;
   present(id: string, visible: boolean): Promise<void>;
   revokePages(id: string): void;
-  snapshot?(): Json;
+  snapshot?(summary?: boolean): Json;
   metrics?: OperationMetrics;
 }
 /** Chord is an adapter. Dependency and update policy belong to the application layer. */
@@ -133,30 +134,33 @@ export class ChordRuntime implements PluginRuntime {
               return runNativeAsset(root, asset, input as Json, context.abortSignal);
             },
           });
+          const snapshot = async (context: Context, summary = false): Promise<Json> => {
+            if (access.phase !== "active" || !manifest.permissions?.includes("diagnostics"))
+              throw new Error("插件没有诊断读取权限或已停止");
+            const controller = this.options.snapshot?.(summary) ?? { error: "主程序诊断不可用" };
+            let native: Json;
+            try {
+              native = await this.options.native.call(
+                manifest.id,
+                manifest.permissions,
+                "diagnostics.snapshot",
+                summary ? { summary: true } : null,
+                context.abortSignal,
+              );
+            } catch (error) {
+              native = { error: summary ? "宿主运行摘要不可用" : message(error) };
+            }
+            if (summary) return { controller, native };
+            return {
+              controller,
+              native,
+              metrics: this.metrics.snapshot(),
+              plugins: await this.diagnostics(context.abortSignal),
+            };
+          };
           env.provide(HostDiagnostics, {
-            snapshot: async (context) => {
-              if (access.phase !== "active" || !manifest.permissions?.includes("diagnostics"))
-                throw new Error("插件没有诊断读取权限或已停止");
-              const controller = this.options.snapshot?.() ?? { error: "主程序诊断不可用" };
-              let native: Json;
-              try {
-                native = await this.options.native.call(
-                  manifest.id,
-                  manifest.permissions,
-                  "diagnostics.snapshot",
-                  null,
-                  context.abortSignal,
-                );
-              } catch (error) {
-                native = { error: message(error) };
-              }
-              return {
-                controller,
-                native,
-                metrics: this.metrics.snapshot(),
-                plugins: await this.diagnostics(context.abortSignal),
-              };
-            },
+            snapshot: (context) => snapshot(context),
+            summary: (context) => snapshot(context, true),
           });
           env.provide(HostKernel, {
             call: (operation, input, context) => {

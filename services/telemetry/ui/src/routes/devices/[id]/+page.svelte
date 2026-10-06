@@ -24,7 +24,7 @@
       disabled={!result}
       onclick={() => {
         void telemetry.session.requestReport();
-      }}>立即采集</button
+      }}>刷新摘要</button
     >
 
     <a id="close" href={resolve(`devices${page.url.search}`)}>返回列表</a>
@@ -43,6 +43,7 @@
       headers={["插件", "版本 / 可用版本", "状态", "原因"]}
       rows={view.plugins}
     />
+    {#if result.device.report.host?.kind !== "summary"}
     <h3>调用指标</h3>
     <p class="muted">成功率按已结束的调用计算，业务效果见插件核验指标。空值表示暂无数据。</p>
     <DataTable
@@ -60,6 +61,7 @@
     <div id="activities">
       {#each view.activities as activity, index (index)}<p>{activity}</p>{/each}
     </div>
+    {/if}
     <h3>历史样本</h3>
     <div id="history" class="scroll">
       {#each view.history as sample, index (index)}<p>{sample}</p>{:else}<p>

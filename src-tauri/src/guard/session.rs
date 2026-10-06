@@ -183,8 +183,18 @@ impl Run {
         let Ok(own) = std::env::current_exe() else {
             return false;
         };
+        // Keep literal matches; resolve DOS aliases and namespace prefixes only when needed.
+        let same_image = executable.eq_ignore_ascii_case(&own.to_string_lossy())
+            || fs::canonicalize(&executable)
+                .ok()
+                .zip(fs::canonicalize(&own).ok())
+                .is_some_and(|(image, own)| {
+                    image
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case(&own.to_string_lossy())
+                });
         executable.eq_ignore_ascii_case(&saved.executable)
-            && executable.eq_ignore_ascii_case(&own.to_string_lossy())
+            && same_image
             && created == saved.created
             && unsafe { WaitForSingleObject(handle.0, 0) } == WAIT_TIMEOUT
     }

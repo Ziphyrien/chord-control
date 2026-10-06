@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -25,6 +26,7 @@ const makeNsis =
   ].find(existsSync) ??
   "makensis.exe";
 const header = path.join(repoRoot, "src-tauri/windows/diagnostics.nsh");
+const hooks = path.join(repoRoot, "src-tauri/windows/hooks.nsh");
 const template = readFileSync(path.join(repoRoot, "src-tauri/windows/installer.nsi"), "utf8");
 // Exercise the real installer callbacks as well as the production logger.
 const callbacks = ["onInstFailed", "onInstSuccess"]
@@ -42,8 +44,9 @@ const log = path.join(logRoot, "installer.log");
 const previous = path.join(logRoot, "installer.previous.log");
 const exe = path.join(tempRoot, "fixture.exe");
 
-function invokeFixture(mode, expectedExit) {
-  const result = spawnSync(exe, ["/S", "/private-command-line-sentinel"], {
+function invokeFixture(mode, expectedExit, update = false) {
+  const args = ["/S", "/private-command-line-sentinel", ...(update ? ["/UPDATE"] : [])];
+  const result = spawnSync(exe, args, {
     env: { ...process.env, CHORD_INSTALLER_TEST_MODE: mode },
     timeout: 20_000,
     windowsHide: true,
@@ -66,6 +69,13 @@ function writeUnicode(file, text) {
 function resetLogs() {
   rmSync(logRoot, { recursive: true, force: true });
 }
+async function waitForMarker(file) {
+  const deadline = Date.now() + 5_000;
+  while (!existsSync(file)) {
+    assert.ok(Date.now() < deadline, "Recovery did not start the unchanged old application");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
 
 try {
   const registers = Array.from({ length: 20 }, (_, i) => (i < 10 ? `$${i}` : `$R${i - 10}`));
@@ -82,8 +92,8 @@ try {
       ].join("\n"),
     )
     .join("\n");
-  // This fixture only includes diagnostics and callbacks. It never includes install
-  // sections or startup hooks, and never writes registry keys or real app files.
+  // Only real diagnostics, callbacks and the process-exit barrier are included.
+  // Fixture executables and markers stay under tempRoot; no registry or real app writes.
   const fixture = String.raw`
 Unicode true
 RequestExecutionLevel user
@@ -93,17 +103,48 @@ Name "Installer diagnostics fixture"
 OutFile "@EXE@"
 !define INSTALLER_DIAGNOSTIC_VERSION "fixture-0.4.7"
 !define INSTALLER_DIAGNOSTIC_ROOT "$EXEDIR\logs"
+!define MAINBINARYNAME "fixture-old"
+!define PRODUCTNAME "Installer diagnostics fixture"
+!addplugindir "@NSISDIR@\Plugins\x86-unicode\additional"
 !include "@HEADER@"
+!include "@HOOKS@"
 Var TestMode
+Var ReplacementStarted
 Function .onInit
+  StrCpy $ReplacementStarted 0
+  ClearErrors
+  @GET_OPTIONS@ $CMDLINE "--hold-peer" $0
+  IfErrors init_not_peer
+  FileOpen $0 "$EXEDIR\peer-started" w
+  FileWrite $0 "started"
+  FileClose $0
+  Sleep 1000
+  FileOpen $0 "$EXEDIR\peer-ended" w
+  FileWrite $0 "ended"
+  FileClose $0
+  SetErrorLevel 0
+  Quit
+  init_not_peer:
+  ClearErrors
+  @GET_OPTIONS@ $CMDLINE "--background" $0
+  IfErrors init_normal
+  FileOpen $0 "$EXEDIR\recovery.marker" w
+  FileWrite $0 "started"
+  FileClose $0
+  SetErrorLevel 0
+  Quit
+  init_normal:
   StrCpy $INSTDIR "$EXEDIR\安装目录"
   ReadEnvStr $TestMode "CHORD_INSTALLER_TEST_MODE"
+  StrCmp $TestMode "failure-after-files" 0 +2
+  StrCpy $ReplacementStarted 1
   !insertmacro InstallerLog "init" "entered" "$EXEPATH"
 FunctionEnd
 @CALLBACKS@
 Section
   ; Production succeeds without SetErrorLevel: exercise NSIS's untouched default.
   StrCmp $TestMode "default-success" end
+  StrCmp $TestMode "wait-peer" wait_peer
 @SET_REGISTERS@
   Push "stack-sentinel"
   SetErrorLevel 37
@@ -132,10 +173,31 @@ Section
   Pop $0
   StrCmp $0 "stack-sentinel" +2
     Goto state_corrupt
-  StrCmp $TestMode "failure" 0 done
+  StrCmp $TestMode "failure" failure_fixture
+  StrCmp $TestMode "failure-after-files" 0 done
+  failure_fixture:
   SetErrorLevel 23
   Abort "intentional fixture failure"
   done:
+  SetErrorLevel 0
+  Goto end
+  wait_peer:
+  Delete "$EXEDIR\peer-started"
+  Delete "$EXEDIR\peer-ended"
+  ClearErrors
+  Exec '"$EXEPATH" --hold-peer'
+  IfErrors state_corrupt
+  StrCpy $2 500
+  wait_peer_ready:
+  IfFileExists "$EXEDIR\peer-started" wait_peer_started
+  Sleep 10
+  IntOp $2 $2 - 1
+  StrCmp $2 0 state_corrupt wait_peer_ready
+  wait_peer_started:
+  !insertmacro ChordWaitForProcessExit "fixture.exe"
+  StrCmp $0 1 0 state_corrupt
+  IfFileExists "$EXEDIR\peer-ended" wait_peer_done state_corrupt
+  wait_peer_done:
   SetErrorLevel 0
   Goto end
   state_corrupt:
@@ -147,6 +209,9 @@ SectionEnd
   const source = fixture
     .replace("@EXE@", () => exe)
     .replace("@HEADER@", () => header)
+    .replace("@HOOKS@", () => hooks)
+    .replace("@NSISDIR@", () => "${NSISDIR}")
+    .replaceAll("@GET_OPTIONS@", () => "${GetOptions}")
     .replace("@CALLBACKS@", () => callbacks)
     .replace("@SET_REGISTERS@", () => setRegisters)
     .replaceAll("@CHECK_REGISTERS@", () => checkRegisters);
@@ -215,6 +280,29 @@ SectionEnd
     "Second invocation erased the earlier attempt",
   );
 
+  // The barrier must wait for a real same-name peer, not only a helper receipt.
+  invokeFixture("wait-peer", 0);
+
+  // Failure before replacement must launch the unchanged app only for /UPDATE.
+  const oldDir = path.join(tempRoot, "安装目录");
+  const marker = path.join(oldDir, "recovery.marker");
+  mkdirSync(oldDir, { recursive: true });
+  copyFileSync(exe, path.join(oldDir, "fixture-old.exe"));
+  resetLogs();
+  invokeFixture("failure", 23, true);
+  await waitForMarker(marker);
+  assert.match(readLog(log), /event=recovery_spawned .*status=ok\r\n/);
+  for (const [mode, update] of [
+    ["failure-after-files", true],
+    ["failure", false],
+  ]) {
+    rmSync(marker, { force: true });
+    resetLogs();
+    invokeFixture(mode, 23, update);
+    assert.ok(!readLog(log).includes("event=recovery_launch_requested "));
+    assert.ok(!existsSync(marker), "Unsafe or non-updater recovery was launched");
+  }
+
   // Cross the rotation boundary twice. The older previous file must be replaced.
   for (const iteration of [1, 2]) {
     const seed = `rotation-${iteration}:` + "x".repeat(258050);
@@ -254,7 +342,7 @@ SectionEnd
   assert.equal(statSync(log).size, before, "Failed rotation appended past the bound");
 
   console.log(
-    "PASS: NSIS executable preserved errors, 20 registers, stack and exit codes; callbacks, Unicode records, append, rotation and filesystem failure paths verified.",
+    "PASS: NSIS executable preserved errors, 20 registers, stack and exit codes; callbacks, process-exit wait, safe recovery, Unicode records, rotation and filesystem failures verified.",
   );
 } finally {
   rmSync(tempRoot, { recursive: true, force: true });

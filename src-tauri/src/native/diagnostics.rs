@@ -27,7 +27,22 @@ pub(super) fn process_identity() -> Value {
     }
 }
 
-pub(super) fn snapshot(app: &AppHandle) -> Value {
+pub(super) fn snapshot(app: &AppHandle, detailed: bool) -> Value {
+    if !detailed {
+        let updater = crate::updater::status(app);
+        return json!({
+            "schemaVersion": 2,
+            "observedAtMs": super::failures::now_ms(),
+            "version": app.package_info().version.to_string(),
+            "unlocked": app.state::<crate::desktop::DesktopState>().is_unlocked(),
+            "failures": crate::sync::lock(&app.state::<super::NativeState>().failures).summary(),
+            "updater": {
+                "busy": updater["busy"],
+                "availableVersion": updater["availableVersion"],
+                "hasError": updater["error"].is_string(),
+            },
+        });
+    }
     json!({
         "schemaVersion": 2,
         "observedAtMs": super::failures::now_ms(),

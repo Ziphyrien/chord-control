@@ -15,6 +15,8 @@ export type DiagnosticSnapshot = {
 };
 /** Read-only operational state, available to any plugin declaring diagnostics permission. */
 export interface HostDiagnosticService {
+  /** Lightweight state; no startup-task query, process identity or plugin diagnostic callbacks. */
+  summary(context: Context): Promise<JsonValue>;
   snapshot(context: Context): Promise<JsonValue>;
 }
 export interface PluginDiagnosticService {

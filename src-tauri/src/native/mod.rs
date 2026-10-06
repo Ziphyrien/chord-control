@@ -158,11 +158,11 @@ pub(crate) fn handle(app: &AppHandle, value: &Value, generation: Generation) -> 
                     || request.id.is_empty()
                     || request.id.len() > 100
                     || request.permission != "diagnostics"
-                    || !request.input.is_null()
+                    || !(request.input.is_null() || request.input == json!({"summary": true}))
                 {
                     Err("无效诊断请求".into())
                 } else {
-                    Ok(diagnostics::snapshot(&ticket.app))
+                    Ok(diagnostics::snapshot(&ticket.app, request.input.is_null()))
                 }
             } else {
                 request.execute().map_err(|failure| {

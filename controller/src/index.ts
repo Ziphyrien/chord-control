@@ -34,7 +34,7 @@ const runtime: ChordRuntime = new ChordRuntime({
   native,
   metrics,
   revokePages: (id) => ui.revoke(id),
-  snapshot: (): Json => operationalSnapshot(app.snapshot()),
+  snapshot: (summary = false): Json => operationalSnapshot(app.snapshot(), summary),
   log: (id, detail) => activity.add("插件日志", `${id}: ${detail}`),
   present: async (id, visible) => {
     const plugin = repository.snapshot().plugins.find((item) => item.id === id);

@@ -43,6 +43,7 @@ VIAddVersionKey "LegalCopyright" "{{copyright}}"
 !endif
 Var PassiveMode
 Var WebViewVersion
+Var ReplacementStarted
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !insertmacro MUI_PAGE_WELCOME
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
@@ -63,6 +64,7 @@ Function SkipIfPassive
 FunctionEnd
 Function .onInit
   SetShellVarContext current
+  StrCpy $ReplacementStarted 0
   !insertmacro InstallerLog "init" "entered" "$EXEPATH"
   !if "{{arch}}" == "x64"
     SetRegView 64
@@ -89,8 +91,39 @@ FunctionEnd
 
 Function .onInstFailed
   Push $0
+  Push $1
+  Push $2
+  ${If} ${Errors}
+    StrCpy $2 1
+  ${Else}
+    StrCpy $2 0
+  ${EndIf}
   GetErrorLevel $0
   !insertmacro InstallerLog "installer_failed" "exitcode=$0" "$INSTDIR"
+  ; Only an updater has already exited the old host. Never launch a partially replaced app.
+  ${If} $ReplacementStarted != 1
+  ${AndIf} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
+    ClearErrors
+    ${GetOptions} $CMDLINE "/UPDATE" $1
+    ${IfNot} ${Errors}
+      !insertmacro InstallerLog "recovery_launch_requested" "requested" "$INSTDIR\${MAINBINARYNAME}.exe"
+      ClearErrors
+      Exec '"$INSTDIR\${MAINBINARYNAME}.exe" --background'
+      ${If} ${Errors}
+        !insertmacro InstallerLog "recovery_launch_failed" "nsis_error" "$INSTDIR\${MAINBINARYNAME}.exe"
+        DetailPrint "Update failed. Open the unchanged old version from the installation folder."
+      ${Else}
+        !insertmacro InstallerLog "recovery_spawned" "ok" "$INSTDIR\${MAINBINARYNAME}.exe"
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ${If} $2 = 1
+    SetErrors
+  ${Else}
+    ClearErrors
+  ${EndIf}
+  Pop $2
+  Pop $1
   Pop $0
 FunctionEnd
 
@@ -189,6 +222,7 @@ SectionEnd
 Section "Chord Control"
   ; Download/runtime preparation precedes stopping the old installation.
   !insertmacro NSIS_HOOK_PREINSTALL
+  StrCpy $ReplacementStarted 1
   !insertmacro InstallerLog "files_begin" "requested" "$INSTDIR"
   ClearErrors
   SetOutPath "$INSTDIR"

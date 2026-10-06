@@ -792,6 +792,11 @@ fn collect_inner(
             return result;
         }
     }
+    if targets.is_empty() {
+        result["reason"] =
+            json!("No probes with usable time and live process identity; audit reads skipped");
+        return result;
+    }
     result["auditPolicy"] = outcome(policy());
     publish(&result);
     let (names, enumeration) = enumerate(deadline);

@@ -68,12 +68,16 @@ test(
   "generic diagnostics exposes observed state and rejects plugins without its grant",
   { timeout: 25000 },
   async (t) => {
+    const nativeRequests = [];
     const h = await createTransportHarness({
-      native: () => ({ version: "0.4.4", updater: { busy: false } }),
+      native: (request) => {
+        nativeRequests.push(request);
+        return { version: "0.4.4", updater: { busy: false } };
+      },
     });
     t.onTestFinished(() => h.close());
     const source =
-      'exports.default={id:"observer",setup(env){const diagnostics=env.use({id:"chord-control.diagnostics",local:false});env.provide({id:"chord-control.ui",local:false},{call:(_method,_input,context)=>diagnostics.snapshot(context)});}};';
+      'exports.default={id:"observer",setup(env){const diagnostics=env.use({id:"chord-control.diagnostics",local:false});env.provide({id:"chord-control.ui",local:false},{call:(method,_input,context)=>diagnostics[method](context)});}};';
     await h.start();
     const allowed = await h.fixture("1.0.0", {
       id: "test.observer",
@@ -100,11 +104,27 @@ test(
     assert.equal(activation.succeeded, 1);
     assert.equal(activation.successRatio, 1);
     assert(activation.meanMs >= 0);
+    const summary = await h.command({
+      type: "plugin_call",
+      pluginId: allowed.id,
+      method: "summary",
+      input: null,
+    });
+    assert.equal(summary.controller.version, HOST_VERSION);
+    const plugin = summary.controller.plugins.find((item) => item.id === allowed.id);
+    assert.equal(plugin.running, true);
+    assert.equal(plugin.hasError, false);
+    assert.equal(Object.hasOwn(plugin, "error"), false);
+    assert.equal(Object.hasOwn(summary.controller, "activities"), false);
+    assert.equal(Object.hasOwn(summary, "metrics"), false);
+    assert.equal(Object.hasOwn(summary, "plugins"), false);
+    assert.deepEqual(nativeRequests.at(-1).input, { summary: true });
     const denied = await h.fixture("1.0.0", { id: "test.denied", source });
     await h.add(denied);
-    await assert.rejects(
-      h.command({ type: "plugin_call", pluginId: denied.id, method: "snapshot", input: null }),
-      /诊断读取权限/,
-    );
+    for (const method of ["snapshot", "summary"])
+      await assert.rejects(
+        h.command({ type: "plugin_call", pluginId: denied.id, method, input: null }),
+        /诊断读取权限/,
+      );
   },
 );

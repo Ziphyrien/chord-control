@@ -89,6 +89,16 @@ impl History {
             "message": failure.message.chars().take(600).collect::<String>(),
         }));
     }
+    pub fn summary(&self) -> Value {
+        let latest = self.events.back().map(|event| {
+            json!({
+                "observedAtMs": event["observedAtMs"],
+                "pluginId": event["pluginId"], "operation": event["operation"],
+                "api": event["api"], "code": event["code"],
+            })
+        });
+        json!({"sinceMs": self.since_ms, "total": self.sequence, "latest": latest})
+    }
     pub fn snapshot(&self) -> Value {
         json!({"sinceMs": self.since_ms, "total": self.sequence, "retained": self.events.len(),
             "dropped": self.sequence.saturating_sub(self.events.len() as u64), "events": self.events})
@@ -127,5 +137,12 @@ mod tests {
         assert_eq!(event["process"]["createdAt"], "123");
         assert!(event.get("input").is_none());
         assert!(event["target"].get("value").is_none());
+        let summary = history.summary();
+        assert_eq!(summary["total"], 20);
+        assert_eq!(summary["latest"]["operation"], "registry.write");
+        assert_eq!(summary["latest"]["code"], 5);
+        assert!(summary["latest"].get("target").is_none());
+        assert!(summary["latest"].get("process").is_none());
+        assert!(summary["latest"].get("message").is_none());
     }
 }

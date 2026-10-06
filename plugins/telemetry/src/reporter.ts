@@ -32,7 +32,7 @@ export class Reporter {
   private latest: TelemetryReport | null = null;
   constructor(
     private readonly directory: string,
-    private readonly collect: (signal: AbortSignal) => Promise<Json>,
+    private readonly collect: (signal: AbortSignal, detailed: boolean) => Promise<Json>,
     private readonly log: (text: string) => Promise<void>,
   ) {}
   async start(): Promise<void> {
@@ -96,11 +96,11 @@ export class Reporter {
   report(): Json {
     return this.latest;
   }
-  send(): Promise<void> {
-    if (this.pending) return this.pending;
+  send(detailed = false): Promise<void> {
+    if (this.pending) return detailed ? this.pending.then(() => this.send(true)) : this.pending;
     if (this.stopped || !this.identity) return Promise.resolve();
     clearTimeout(this.timer);
-    this.pending = this.attempt().finally(() => {
+    this.pending = this.attempt(detailed).finally(() => {
       this.pending = undefined;
       if (!this.stopped)
         this.timer = setTimeout(
@@ -112,7 +112,7 @@ export class Reporter {
     });
     return this.pending;
   }
-  private async attempt(): Promise<void> {
+  private async attempt(detailed: boolean): Promise<void> {
     const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(30_000)]);
     const started = performance.now();
     this.attempts++;
@@ -120,9 +120,8 @@ export class Reporter {
       const identity = this.identity!;
       const sequence = await identity.next();
       const requestId = this.requestId;
-      const host = await this.collect(signal);
-      const memory = process.memoryUsage(),
-        cpu = process.cpuUsage();
+      const host = await this.collect(signal, detailed);
+      const memory = process.memoryUsage();
       const report: TelemetryReport = {
         format: 1,
         sequence,
@@ -140,8 +139,6 @@ export class Reporter {
           uptimeSeconds: process.uptime(),
           rssBytes: memory.rss,
           heapUsedBytes: memory.heapUsed,
-          cpuUserMicros: cpu.user,
-          cpuSystemMicros: cpu.system,
         },
         host,
       };

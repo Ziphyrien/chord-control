@@ -5,6 +5,28 @@
   let view = $derived(diagnosticView(host));
 </script>
 
+{#if host?.kind === "summary"}
+  <section class="diagnostics" aria-labelledby="diagnostic-heading">
+    <h3 id="diagnostic-heading">运行摘要</h3>
+    <p class="muted">本次为轻量上报，未请求 Windows 权限、注册表或系统审计；这不是采集失败。详细诊断需在客户端插件界面手动采集。</p>
+    {#if host?.error || host?.native?.error}
+      <p class="muted">{host.error || host.native.error}</p>
+    {/if}
+    <DataTable id="native-health" headers={["项目", "结果"]} rows={[
+      ["原生调用失败总数", host?.native?.failures?.total ?? "未取得"],
+      ["主程序更新状态", typeof host?.native?.updater?.busy === "boolean" ? (host.native.updater.busy ? "更新进行中" : "空闲") : "未取得"],
+      ["更新错误", typeof host?.native?.updater?.hasError === "boolean" ? (host.native.updater.hasError ? "有错误（详见本地诊断）" : "无") : "未取得"],
+    ]} />
+    {#if host?.native?.failures?.latest}
+      <DataTable id="latest-native-failure" headers={["插件", "操作", "API", "错误代码"]} rows={[[
+        host.native.failures.latest.pluginId,
+        host.native.failures.latest.operation,
+        host.native.failures.latest.api ?? "—",
+        host.native.failures.latest.code ?? "—",
+      ]]} />
+    {/if}
+  </section>
+{:else}
 <section class="diagnostics" aria-labelledby="diagnostic-heading">
   <h3 id="diagnostic-heading">Windows 远程诊断</h3>
   <p class="muted">结果反映各项采集时间的状态。未知表示数据尚未取得。</p>
@@ -132,3 +154,4 @@
     empty={view.evidenceEmpty}
   />
 </section>
+{/if}

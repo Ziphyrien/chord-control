@@ -1,5 +1,28 @@
 ; Maintenance and first-run startup are separate transactions from file replacement.
 !include "${__FILEDIR__}\diagnostics.nsh"
+; A maintenance receipt is not an exit barrier for unrecorded helpers or loader teardown.
+; Return the verifier's final status in $0; never kill a process by its name.
+!macro ChordWaitForProcessExit PROCESS
+  Push $2
+  Push $3
+  System::Call 'kernel32::GetTickCount() i.r2'
+  ${Do}
+    nsis_tauri_utils::FindProcessCurrentUser "${PROCESS}"
+    Pop $0
+    ${If} $0 != 0
+      ${ExitDo}
+    ${EndIf}
+    System::Call 'kernel32::GetTickCount() i.r3'
+    IntOp $3 $3 - $2
+    ${If} $3 >= 45000
+      ${ExitDo}
+    ${EndIf}
+    Sleep 100
+  ${Loop}
+  Pop $3
+  Pop $2
+!macroend
+
 !macro NSIS_HOOK_PREINSTALL
   ${If} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
     ; The helper revokes before draining and has a 45s deadline. nsExec also bounds
@@ -19,17 +42,15 @@
   ${EndIf}
   ; Legacy hosts may not understand maintenance-stop. Do not kill processes by name:
   ; that can interrupt another installation and bypass plugin restoration.
-  nsis_tauri_utils::FindProcessCurrentUser "${MAINBINARYNAME}.exe"
-  Pop $0
+  !insertmacro ChordWaitForProcessExit "${MAINBINARYNAME}.exe"
   !insertmacro InstallerLog "host_process_check" "result=$0" "$INSTDIR\${MAINBINARYNAME}.exe"
-  ${If} $0 = 0
+  ${If} $0 != 1
     SetErrorLevel 1
     Abort "Close Chord Control before installing this update."
   ${EndIf}
-  nsis_tauri_utils::FindProcessCurrentUser "plugin-controller.exe"
-  Pop $0
+  !insertmacro ChordWaitForProcessExit "plugin-controller.exe"
   !insertmacro InstallerLog "controller_process_check" "result=$0" "$INSTDIR\plugin-controller.exe"
-  ${If} $0 = 0
+  ${If} $0 != 1
     SetErrorLevel 1
     Abort "Chord Control is still shutting down. Please retry."
   ${EndIf}

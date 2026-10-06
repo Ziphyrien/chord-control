@@ -1,8 +1,8 @@
 {
   "name": "com.chord.telemetry",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "private": true,
-  "description": "汇报运行状态、权限检查及关联审计记录，支持远程排查",
+  "description": "默认仅汇报运行摘要，系统权限及关联审计诊断由用户按需采集",
   "type": "module",
   "control": {
     "name": "运行遥测",
@@ -11,13 +11,12 @@
       "binary": "chord-observer",
       "asset": "native/chord-observer.exe"
     },
-    "minHostVersion": "0.4.10",
+    "minHostVersion": "0.4.17",
     "permissions": [
       "native-asset",
       "diagnostics",
       "network",
-      "filesystem",
-      "process-control"
+      "filesystem"
     ],
     "services": {
       "provides": [],
