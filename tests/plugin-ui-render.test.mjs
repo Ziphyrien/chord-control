@@ -135,6 +135,11 @@ test(
           result = { saved: true };
         }
       } else if (name === "telemetry") {
+        if (!["status", "send", "report"].includes(method))
+          return route.fulfill({
+            status: 400,
+            json: { ok: false, message: "请求格式有误" },
+          });
         if (method === "send") {
           sends++;
           await telemetrySend.promise;

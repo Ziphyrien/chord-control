@@ -137,7 +137,7 @@
 </script>
 
 <Page title="运行遥测" description="定期上报运行状态。暂停此插件即可停止上报。">
-  {#snippet actions()}<ActionButton action={refresh} disabled={busy} aria-busy={busy}
+  {#snippet actions()}<ActionButton action={() => refresh()} disabled={busy} aria-busy={busy}
       >刷新</ActionButton
     >{/snippet}
   {#if status}<Facts items={facts} />{/if}
