@@ -197,7 +197,9 @@ export async function buildCatalog({
   privateKey,
   generatedAt = releaseTime(),
   compiler,
+  retiredPlugins = [],
 }) {
+  assertCatalog({ format: 1, plugins: [], retiredPlugins });
   return withDirectoryLock(outdir, async () => {
     const packages = await discoverPackages(pluginsRoot);
     if (!packages.length) throw new Error("No plugin packages found");
@@ -218,7 +220,10 @@ export async function buildCatalog({
           await buildPlugin({ directory, outdir: stage, baseUrl, privateKey, compiler }),
         );
       assertResolvable(plugins);
-      const catalog = signed({ format: 1, generatedAt, plugins }, privateKey);
+      const catalog = signed(
+        { format: 1, generatedAt, plugins, ...(retiredPlugins.length ? { retiredPlugins } : {}) },
+        privateKey,
+      );
       assertCatalog(catalog);
       await writeFile(join(stage, "catalog.json"), jsonBytes(catalog));
       if (privateKey)
@@ -264,6 +269,7 @@ if (isMain(import.meta.url)) {
     outdir: join(repositoryRoot, "release/plugins"),
     baseUrl,
     privateKey,
+    retiredPlugins: await readJson(join(repositoryRoot, "config/retired-plugins.json")),
   });
   console.log(
     `Built ${catalog.plugins.length} plugins and ${privateKey ? "signed" : "unsigned local"} catalogue`,

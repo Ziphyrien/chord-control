@@ -1,9 +1,5 @@
 import type { Json } from "../../../shared/protocol.ts";
-const PROTECTED = new Set([
-  "com.chord.password-pad",
-  "com.chord.app-guard",
-  "com.chord.study-guard",
-]);
+const PROTECTED = new Set(["com.chord.password-pad", "com.chord.app-guard"]);
 const TITLES = new Map([
   ["desktop.open", "打开控制中心"],
   ["desktop.quit", "退出 Chord Control"],

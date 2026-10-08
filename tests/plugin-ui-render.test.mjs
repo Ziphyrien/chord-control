@@ -19,7 +19,7 @@ test(
     });
     const html = {};
     await Promise.all(
-      ["system-info", "study-guard", "password-pad", "telemetry"].map(async (name) => {
+      ["system-info", "password-pad", "telemetry"].map(async (name) => {
         const directory = resolve("plugins", name),
           pkg = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
         const bundleDir = join(root, name);
@@ -141,8 +141,7 @@ test(
           succeeded: 0,
           failed: sends ? 1 : 0,
         };
-      } else if (name === "study-guard") result = { active: true, pending: [], last: "保护已启用" };
-      else if (name === "password-pad") {
+      } else if (name === "password-pad") {
         passwordReads++;
         result = {
           id: "challenge",
@@ -191,10 +190,6 @@ test(
     await expect(page.locator("#detail")).toBeHidden();
     await disclosure.press("Enter");
     await expect(page.locator("#detail")).toBeVisible();
-    await page.goto("http://plugins.test/study-guard/signed-generation/ui");
-    await expect(page.locator('[data-browser="edge"]')).toBeEnabled();
-    await expect(page.getByRole("heading", { name: "浏览器保护" })).toBeVisible();
-    await expect(page.locator("body")).not.toContainText("壁纸");
     await page.goto("http://plugins.test/password-pad/signed-generation/ui#panel");
     const preview = page.locator("#cells button");
     await expect(preview).toHaveCount(36);

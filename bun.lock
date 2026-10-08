@@ -61,7 +61,7 @@
     },
     "plugins/app-guard": {
       "name": "com.chord.app-guard",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "dependencies": {
         "@chord-control/contracts": "workspace:*",
       },
@@ -75,27 +75,6 @@
     },
     "plugins/password-pad/ui": {
       "name": "@chord-control/password-pad-ui",
-      "dependencies": {
-        "@chord-control/ui": "workspace:*",
-        "svelte": "^5.57.1",
-      },
-      "devDependencies": {
-        "@chord-control/kit": "workspace:*",
-        "@sveltejs/kit": "^3.0.0",
-        "svelte-check": "^4.7.6",
-        "vite": "catalog:",
-        "vite-plus": "catalog:",
-      },
-    },
-    "plugins/study-guard": {
-      "name": "com.chord.study-guard",
-      "version": "1.3.2",
-      "dependencies": {
-        "@chord-control/contracts": "workspace:*",
-      },
-    },
-    "plugins/study-guard/ui": {
-      "name": "@chord-control/study-guard-ui",
       "dependencies": {
         "@chord-control/ui": "workspace:*",
         "svelte": "^5.57.1",
@@ -198,8 +177,6 @@
     "@chord-control/kit": ["@chord-control/kit@workspace:packages/kit"],
 
     "@chord-control/password-pad-ui": ["@chord-control/password-pad-ui@workspace:plugins/password-pad/ui"],
-
-    "@chord-control/study-guard-ui": ["@chord-control/study-guard-ui@workspace:plugins/study-guard/ui"],
 
     "@chord-control/system-info-ui": ["@chord-control/system-info-ui@workspace:plugins/system-info/ui"],
 
@@ -762,8 +739,6 @@
     "com.chord.app-guard": ["com.chord.app-guard@workspace:plugins/app-guard"],
 
     "com.chord.password-pad": ["com.chord.password-pad@workspace:plugins/password-pad"],
-
-    "com.chord.study-guard": ["com.chord.study-guard@workspace:plugins/study-guard"],
 
     "com.chord.telemetry": ["com.chord.telemetry@workspace:plugins/telemetry"],
 

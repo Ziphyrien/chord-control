@@ -241,6 +241,7 @@ test("catalogues discover only packages, preserve metadata and reproduce signed 
     baseUrl: "https://github.com/owner/project/releases/download/plugins-test",
     generatedAt: releaseTime("1000000000"),
     compiler: fixtureCompiler,
+    retiredPlugins: [{ id: "retired.plugin", maxVersion: "1.3.2", minHostVersion: "0.4.21" }],
   };
   const first = await buildCatalog(options);
   const snapshot = new Map(
@@ -255,6 +256,10 @@ test("catalogues discover only packages, preserve metadata and reproduce signed 
   assert.equal(first.plugins[0].color, "#123456");
   assert.equal(first.plugins[0].ui, "ui.html");
   verifySigned(first, publicKey);
+  assert.deepEqual(first.retiredPlugins, options.retiredPlugins);
+  const tampered = structuredClone(first);
+  tampered.retiredPlugins[0].maxVersion = "9.0.0";
+  assert.throws(() => verifySigned(tampered, publicKey), /签名/);
   const { assets } = await validatePluginRelease(outdir, { publicKey, baseUrl: options.baseUrl });
   assert.equal(assets.size, 4);
   const reordered = Object.fromEntries(Object.entries(first).reverse());

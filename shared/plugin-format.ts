@@ -132,4 +132,18 @@ export function assertCatalog(value: unknown): asserts value is PluginCatalog {
     if (ids.has(id)) throw new Error("插件目录包含重复 id（Windows 忽略大小写）");
     ids.add(id);
   }
+  if (value.retiredPlugins !== undefined) {
+    if (!Array.isArray(value.retiredPlugins) || value.retiredPlugins.length > 100)
+      throw new Error("插件退役列表格式错误或超过 100 项");
+    for (const retirement of value.retiredPlugins) {
+      if (!object(retirement)) throw new Error("插件退役声明格式错误");
+      assertId(retirement.id);
+      version(retirement.maxVersion);
+      version(retirement.minHostVersion);
+      if (retirement.reason !== undefined) text(retirement.reason, "退役原因", 1000);
+      const id = retirement.id.toLowerCase();
+      if (ids.has(id)) throw new Error("插件不能重复退役或同时出现在发布和退役列表中");
+      ids.add(id);
+    }
+  }
 }

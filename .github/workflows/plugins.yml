@@ -8,6 +8,7 @@ on:
       - "sdk/**"
       - "shared/**"
       - "config/plugin-public.pem"
+      - "config/retired-plugins.json"
       - "scripts/**"
       - "package.json"
       - "bun.lock"

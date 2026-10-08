@@ -32,10 +32,18 @@ export interface PluginManifest {
   icon?: string;
   color?: string;
 }
+/** Publisher-authorized uninstall, covered by the catalogue's Ed25519 signature. */
+export interface PluginRetirement {
+  id: string;
+  maxVersion: string;
+  minHostVersion: string;
+  reason?: string;
+}
 export interface PluginCatalog {
   format: 1;
   generatedAt?: string;
   plugins: PluginManifest[];
+  retiredPlugins?: PluginRetirement[];
   signature?: string;
 }
 export interface ControllerSettings {

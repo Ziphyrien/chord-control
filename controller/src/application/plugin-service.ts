@@ -1,6 +1,11 @@
-import type { ControllerSettings, Json, PluginManifest } from "../../../shared/protocol.ts";
+import type {
+  ControllerSettings,
+  Json,
+  PluginManifest,
+  PluginCatalog,
+} from "../../../shared/protocol.ts";
 import { assertUrl, compareVersion } from "../../../shared/plugin-format.ts";
-import { normalizePublicKey } from "../../../shared/signing.ts";
+import { normalizePublicKey, verifySigned } from "../../../shared/signing.ts";
 import { message } from "../../../shared/validation.ts";
 import {
   catalogSource,
@@ -29,7 +34,8 @@ import type {
 } from "../domain/ports.ts";
 import { PluginLifecycle } from "./plugin-lifecycle.ts";
 import { serialQueue } from "./execution.ts";
-import { dependencyGraph } from "../../../shared/dependencies.ts";
+import { dependencyGraph, dependentClosure } from "../../../shared/dependencies.ts";
+import { HOST_VERSION } from "../../../shared/versions.ts";
 
 interface Dependencies {
   repository: ConfigRepository;
@@ -93,6 +99,67 @@ export class PluginService {
       }
     }
     await this.lifecycle.restore();
+    await this.retire(repository.snapshot().catalogCache);
+  }
+  private async retire(catalog?: PluginCatalog, validate: () => void = () => {}): Promise<number> {
+    if (!catalog?.retiredPlugins?.length) return 0;
+    const { repository, archives, log } = this.dependencies;
+    try {
+      // Unsigned development catalogues may install plugins, but cannot authorize deletion.
+      verifySigned(catalog, this.settings.catalogPublicKey);
+    } catch (error) {
+      log("退役声明校验失败", message(error), "error");
+      return 1;
+    }
+    let failures = 0;
+    for (const retirement of catalog.retiredPlugins) {
+      try {
+        if (this.stopping) throw new Error("控制器正在关闭");
+        validate();
+        if (compareVersion(HOST_VERSION, retirement.minHostVersion) < 0) continue;
+        const next = repository.snapshot(),
+          origin = sourceKey(catalogSource(next.settings)),
+          plugin = next.plugins.find(
+            (item) =>
+              item.id.toLowerCase() === retirement.id.toLowerCase() &&
+              sourceKey(item.source) === origin,
+          );
+        if (!plugin) continue;
+        const release = plugin.installed ?? plugin.available;
+        if (release && compareVersion(release.version, retirement.maxVersion) > 0) continue;
+        const affected = dependentClosure(installedGraph(next), plugin.id);
+        for (const id of affected) this.registration(next, id).enabled = false;
+        setIgnored(next, plugin, true);
+        next.plugins = next.plugins.filter((item) => item.id !== plugin.id);
+        // Reuse the normal stop/rollback transaction. Do not forget a failed cleanup.
+        await this.lifecycle.commit(next, [], validate);
+        this.lifecycle.errors.delete(plugin.id);
+        if (
+          plugin.installed &&
+          !next.plugins.some(
+            (item) => item.installed?.artifactSha256 === plugin.installed!.artifactSha256,
+          )
+        ) {
+          try {
+            // Legacy wallpaper migration still needs the retired browser plugin's journal.
+            await archives.purge(plugin.installed, { preserveData: true });
+          } catch (error) {
+            failures++;
+            log("退役插件缓存清理失败", `${plugin.id}: ${message(error)}`, "warning");
+          }
+        }
+        log(
+          "插件已自动卸载",
+          `${release?.name ?? plugin.id}；${retirement.reason ?? "发布者已退役"}；保留插件数据${affected.length ? `；依赖插件已暂停: ${affected.join(", ")}` : ""}`,
+          "success",
+        );
+      } catch (error) {
+        failures++;
+        this.lifecycle.errors.set(retirement.id, message(error));
+        log("插件退役失败", `${retirement.id}: ${message(error)}`, "error");
+      }
+    }
+    return failures;
   }
   private registration(config: Configuration, id: string): Registration {
     const found = config.plugins.find((item) => item.id === id);
@@ -205,6 +272,8 @@ export class PluginService {
       if (this.stopping) throw new Error("控制器正在关闭");
       validate();
       await repository.commit(config);
+      failures += await this.retire(config.catalogCache, validate);
+      config = repository.snapshot();
       const next = structuredClone(config),
         prepared: string[] = [];
       for (const plugin of automaticCandidates(next)) {

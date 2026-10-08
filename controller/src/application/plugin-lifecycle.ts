@@ -39,8 +39,9 @@ export class PluginLifecycle {
   ): Promise<void> {
     const { runtime } = this.dependencies,
       failures: unknown[] = [];
-    for (const id of installedGraph(config).order.reverse())
-      if (ids.has(id) && runtime.has(id)) {
+    const order = new Set([...installedGraph(config).order.reverse(), ...ids]);
+    for (const id of order)
+      if (ids.has(id)) {
         try {
           await runtime.deactivate(id);
         } catch (error) {
@@ -97,9 +98,8 @@ export class PluginLifecycle {
       for (const previous of before.plugins) {
         const wanted = desired.get(previous.id);
         if (
-          !wanted?.enabled ||
-          !wanted.installed ||
-          wanted.installed.artifactSha256 !== previous.installed?.artifactSha256
+          (previous.enabled && !wanted?.enabled) ||
+          wanted?.installed?.artifactSha256 !== previous.installed?.artifactSha256
         ) {
           stop.add(previous.id);
           for (const dependent of dependentClosure(graph, previous.id)) stop.add(dependent);

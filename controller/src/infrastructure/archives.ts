@@ -80,9 +80,10 @@ export class ArchiveStore implements Archives {
     await rm(this.staging, { recursive: true, force: true });
     await mkdir(this.staging, { recursive: true });
   }
-  async purge(manifest: PluginManifest): Promise<void> {
+  async purge(manifest: PluginManifest, options?: { preserveData: boolean }): Promise<void> {
     assertId(manifest.id);
-    await rm(join(this.data, manifest.id), { recursive: true, force: true });
+    if (!options?.preserveData)
+      await rm(join(this.data, manifest.id), { recursive: true, force: true });
     await rm(join(this.directory, `${manifest.artifactSha256}.zip`), { force: true });
   }
   async read(manifest: PluginManifest): Promise<Uint8Array> {

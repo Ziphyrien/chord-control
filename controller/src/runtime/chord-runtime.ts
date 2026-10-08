@@ -227,7 +227,10 @@ export class ChordRuntime implements PluginRuntime {
   }
   private async deactivateGeneration(id: string): Promise<void> {
     const current = this.running.get(id);
-    if (!current) return;
+    if (!current) {
+      if (this.retired.has(id)) throw new Error(`${id} 的清理未完成，请重启控制器后重试`);
+      return;
+    }
     current.access.phase = "stopping";
     current.kernel.stop();
     current.lifetime.abort(new Error("插件正在停止"));

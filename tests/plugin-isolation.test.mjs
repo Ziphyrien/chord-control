@@ -4,9 +4,9 @@ import { readFile } from "node:fs/promises";
 import { applicationFixture, manifest, registration } from "./helpers.mjs";
 
 // Use the shipped service declarations so a new accidental dependency joins this transaction.
-test("wallpaper activation failure cannot roll back the browser and password update group", async (t) => {
+test("wallpaper activation failure cannot roll back the password and entry protection update group", async (t) => {
   const packages = await Promise.all(
-    ["password-pad", "app-guard", "study-guard", "wallpaper-policy"].map(async (name) =>
+    ["password-pad", "app-guard", "wallpaper-policy"].map(async (name) =>
       JSON.parse(
         await readFile(new URL(`../plugins/${name}/package.json`, import.meta.url), "utf8"),
       ),
@@ -41,5 +41,5 @@ test("wallpaper activation failure cannot roll back the browser and password upd
   assert.equal(summaries.find((item) => item.id === wallpaper.id).running, false);
   const failure = h.events.find((event) => event[0] === "插件更新失败");
   assert.match(failure[1], /com\.chord\.wallpaper-policy/);
-  assert.doesNotMatch(failure[1], /com\.chord\.(study-guard|password-pad|app-guard)/);
+  assert.doesNotMatch(failure[1], /com\.chord\.(password-pad|app-guard)/);
 });

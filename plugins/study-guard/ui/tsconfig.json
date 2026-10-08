@@ -1,9 +1,0 @@
-{
-  "extends": "$app/tsconfig",
-  "compilerOptions": {
-    "strict": true,
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "types": ["$app/types", "node", "svelte"]
-  }
-}
